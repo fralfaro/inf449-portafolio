@@ -7,6 +7,6 @@ Uso sugerido:
 ```text
 tarea-01/
 ├── informe.pdf
-└── notebook.ipynb
+└── homework1.ipynb
 ```
 

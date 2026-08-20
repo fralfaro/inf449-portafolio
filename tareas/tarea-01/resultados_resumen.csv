@@ -1,5 +1,3 @@
-,PSNR [dB],PSNR [dB],SSIM,SSIM,SAM [grados],SAM [grados]
-,mean,std,mean,std,mean,std
-metodo,,,,,,
-Bicubica,29.3046,2.9888,0.8857,0.0425,2.7483,1.231
-Malvar2004,34.694,2.5837,0.9681,0.0082,1.7049,0.6901
+,PSNR [dB],SSIM,SAM [grados]
+mean,29.4849,0.8917,2.4072
+std,2.8141,0.0399,1.029

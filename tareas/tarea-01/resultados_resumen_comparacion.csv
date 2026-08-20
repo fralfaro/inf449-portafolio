@@ -1,0 +1,5 @@
+,PSNR [dB],PSNR [dB],SSIM,SSIM,SAM [grados],SAM [grados]
+,mean,std,mean,std,mean,std
+metodo,,,,,,
+Malvar2004,34.694,2.5837,0.9681,0.0082,1.705,0.6901
+bilinear,29.4849,2.8141,0.8917,0.0399,2.4072,1.029

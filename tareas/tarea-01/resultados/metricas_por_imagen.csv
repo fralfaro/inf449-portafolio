@@ -1,0 +1,25 @@
+indice,imagen,patron_bayer,metodo,PSNR [dB],SSIM,SAM [grados]
+0,01.png,RGGB,bilinear,26.0131,0.8166,3.6231
+1,02.png,RGGB,bilinear,32.018,0.8984,1.6612
+2,03.png,RGGB,bilinear,32.8477,0.9309,1.2783
+3,04.png,RGGB,bilinear,32.5195,0.9157,1.5814
+4,05.png,RGGB,bilinear,26.4544,0.8858,4.1863
+5,06.png,RGGB,bilinear,27.3858,0.8516,2.6478
+6,07.png,RGGB,bilinear,32.3303,0.9536,1.6316
+7,08.png,RGGB,bilinear,23.5948,0.8359,4.195
+8,09.png,RGGB,bilinear,31.6912,0.9216,1.4048
+9,10.png,RGGB,bilinear,31.6152,0.9218,1.4285
+10,11.png,RGGB,bilinear,28.9184,0.8739,2.7948
+11,12.png,RGGB,bilinear,32.1053,0.9087,1.1527
+12,13.png,RGGB,bilinear,23.8511,0.7907,4.7398
+13,14.png,RGGB,bilinear,28.7647,0.8782,2.9744
+14,15.png,RGGB,bilinear,30.634,0.9127,2.1082
+15,16.png,RGGB,bilinear,30.4205,0.8791,2.3384
+16,17.png,RGGB,bilinear,31.9761,0.9309,2.2858
+17,18.png,RGGB,bilinear,27.9229,0.8757,3.5939
+18,19.png,RGGB,bilinear,28.1639,0.8784,2.3489
+19,20.png,RGGB,bilinear,29.7778,0.9158,1.7736
+20,21.png,RGGB,bilinear,28.3224,0.8946,2.5357
+21,22.png,RGGB,bilinear,30.2128,0.8899,2.0187
+22,23.png,RGGB,bilinear,33.4203,0.957,1.0643
+23,24.png,RGGB,bilinear,26.6766,0.8823,2.4063

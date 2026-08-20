@@ -1,0 +1,10 @@
+numpy
+pandas
+matplotlib
+Pillow
+scipy
+opencv-python
+scikit-image
+tqdm
+jupyter
+notebook

@@ -85,7 +85,7 @@
 
 \section{\sffamily Resumen}
 
-En este informe se implementa un sistema básico de fotografía computacional para simular la captura de imágenes RGB mediante un arreglo de filtros Bayer. A partir de cada imagen original se genera un mosaico Bayer con patrón RGGB y luego se reconstruye la imagen de color mediante demosaicking. El método principal usa interpolación bicúbica independiente por canal, y como bonus se implementa el algoritmo lineal de Malvar, He y Cutler \cite{malvar2004high}. La evaluación se realiza sobre las 24 imágenes del dataset Kodak, usando PSNR, SSIM y SAM como métricas de calidad.
+En este informe se implementa un sistema básico de fotografía computacional para simular la captura de imágenes RGB mediante un arreglo de filtros Bayer. A partir de cada imagen original se genera un mosaico Bayer con patrón RGGB y luego se reconstruye la imagen de color mediante demosaicking. El método principal usa interpolación bilineal 2D mediante filtros de convolución aplicados por canal, y como bonus se implementa el algoritmo lineal de Malvar, He y Cutler \cite{malvar2004high}. La evaluación se realiza sobre las 24 imágenes del dataset Kodak, usando PSNR, SSIM y SAM como métricas de calidad.
 
 \section{\sffamily Introducción}
 
@@ -98,13 +98,41 @@ G & B
 \end{bmatrix}.
 \]
 
-Si $I(i,j) = (R(i,j),G(i,j),B(i,j))$ representa la imagen RGB original, el mosaico observado $Y$ se obtiene como:
+Si $I(i,j) = (R(i,j),G(i,j),B(i,j))$ representa la imagen RGB original, el filtro Bayer se define mediante un bloque base $B \in \{0,1\}^{2 \times 2 \times 3}$:
 
 \[
-Y(i,j) = M_R(i,j)R(i,j) + M_G(i,j)G(i,j) + M_B(i,j)B(i,j),
+B_0 =
+\begin{bmatrix}
+1 & 0 \\
+0 & 0
+\end{bmatrix},
+\quad
+B_1 =
+\begin{bmatrix}
+0 & 1 \\
+1 & 0
+\end{bmatrix},
+\quad
+B_2 =
+\begin{bmatrix}
+0 & 0 \\
+0 & 1
+\end{bmatrix}.
 \]
 
-donde $M_R$, $M_G$ y $M_B$ son máscaras binarias que indican qué canal fue medido en cada posición. El objetivo del demosaicking es estimar la imagen RGB completa $\hat{I}$ desde este mosaico incompleto.
+Luego, cada máscara completa se obtiene replicando este bloque con producto de Kronecker:
+
+\[
+T_c = \mathbf{1}_{M/2 \times N/2} \otimes B_c, \quad c \in \{0,1,2\}.
+\]
+
+Con estas máscaras, el mosaico observado $Y$ se obtiene como:
+
+\[
+Y = \sum_{c=0}^{C-1} T_c \odot I_c,
+\]
+
+donde $T_0$, $T_1$ y $T_2$ son las máscaras binarias asociadas a los canales rojo, verde y azul. El objetivo del demosaicking es estimar la imagen RGB completa $\hat{I}$ desde este mosaico incompleto.
 
 La reconstrucción se evaluó con tres métricas. PSNR mide el error cuadrático medio en escala logarítmica; SSIM mide similitud estructural considerando luminancia, contraste y estructura; SAM mide el ángulo promedio entre los vectores RGB original y reconstruido en cada píxel.
 
@@ -115,54 +143,95 @@ Se usó el dataset Kodak \cite{kodakdataset}, compuesto por 24 imágenes RGB. Pa
 \begin{enumerate}
     \item cargar la imagen RGB y normalizarla al rango $[0,1]$;
     \item generar el mosaico Bayer con patrón RGGB;
-    \item reconstruir la imagen mediante interpolación bicúbica 2D por canal;
+    \item reconstruir la imagen mediante interpolación bilineal 2D por canal;
     \item calcular PSNR, SSIM y SAM entre la imagen original y la reconstruida;
     \item repetir el proceso con el algoritmo de Malvar2004 para comparar resultados.
 \end{enumerate}
 
-La figura \ref{fig:bayer_bicubica} muestra un ejemplo cualitativo del proceso usando la imagen 01 del dataset Kodak.
+La figura \ref{fig:bayer_bilineal} muestra un ejemplo cualitativo del proceso usando la imagen 01 del dataset Kodak.
 
 \begin{figure}[!h]
     \centering
     \includegraphics[width=0.92\linewidth]{Fig/kodak01_bayer_bicubica.png}
-    \caption{Imagen original, mosaico Bayer RGGB, reconstrucción bicúbica y error absoluto amplificado.}
-    \label{fig:bayer_bicubica}
+    \caption{Imagen original, mosaico Bayer RGGB, reconstrucción bilineal y error absoluto amplificado.}
+    \label{fig:bayer_bilineal}
 \end{figure}
 
-\subsection{\sffamily Interpolación bicúbica}
+\subsection{\sffamily Interpolación bilineal 2D}
 
-La interpolación bicúbica se aplicó de forma independiente a cada canal. Para cada máscara Bayer se tomaron las coordenadas conocidas y sus valores observados; luego se estimaron los valores faltantes sobre toda la grilla espacial mediante interpolación 2D. En los bordes donde la interpolación cúbica puede producir valores no definidos, se usó interpolación por vecino más cercano como respaldo.
+La interpolación bilineal se aplicó de forma independiente a cada canal usando filtros 2D. Primero se separan las muestras observadas del mosaico mediante
 
-\begin{lstlisting}[style=B,caption=Funciones principales para generar el mosaico Bayer e interpolar un canal.,label={lst:bicubica}]
+\[
+\bar{I}_c = T_c \odot Y.
+\]
+
+Luego, cada canal incompleto se reconstruye aplicando un filtro local:
+
+\[
+\hat{I}_c = \frac{1}{4}(\bar{I}_c * H_c).
+\]
+
+Para los canales rojo y azul se usa
+
+\[
+H_{R,B} =
+\begin{bmatrix}
+1 & 2 & 1 \\
+2 & 4 & 2 \\
+1 & 2 & 1
+\end{bmatrix},
+\]
+
+mientras que para el canal verde se usa
+
+\[
+H_G =
+\begin{bmatrix}
+0 & 1 & 0 \\
+1 & 4 & 1 \\
+0 & 1 & 0
+\end{bmatrix}.
+\]
+
+Este método es simple y eficiente, pero al usar filtros fijos puede generar artefactos visibles, especialmente falso color o franjas tipo arcoíris en zonas con bordes y texturas finas.
+
+\begin{lstlisting}[style=B,caption=Funciones principales para generar el mosaico Bayer y reconstruir por interpolación bilineal.,label={lst:bilineal}]
 def rgb_to_bayer_mosaic(image_rgb, pattern="RGGB"):
-    mask_r, mask_g, mask_b = bayer_masks(image_rgb.shape, pattern=pattern)
-    mosaic = np.zeros(image_rgb.shape[:2], dtype=image_rgb.dtype)
-    mosaic[mask_r] = image_rgb[..., 0][mask_r]
-    mosaic[mask_g] = image_rgb[..., 1][mask_g]
-    mosaic[mask_b] = image_rgb[..., 2][mask_b]
-    return mosaic
+    T = bayer_tensor(image_rgb.shape, pattern=pattern)
+    Y = np.zeros(image_rgb.shape[:2], dtype=image_rgb.dtype)
+    for c in range(T.shape[-1]):
+        Y = Y + T[:, :, c] * image_rgb[:, :, c]
+    return Y
 
-def interpolate_channel(mosaic, mask, method="cubic"):
-    height, width = mosaic.shape
-    rr, cc = np.indices((height, width))
-    known_points = np.column_stack((rr[mask], cc[mask]))
-    known_values = mosaic[mask]
-    all_points = np.column_stack((rr.ravel(), cc.ravel()))
-    channel = griddata(known_points, known_values, all_points,
-                       method=method, fill_value=np.nan).reshape(height, width)
-    return np.clip(channel, 0.0, 1.0)
+def demosaick_interpolation(mosaic, pattern="RGGB", method="bilinear"):
+    M, N = mosaic.shape
+    C = 3
+    T = bayer_tensor(mosaic.shape, pattern=pattern)
+    It = np.zeros((M, N, C), float)
+    Ir = np.zeros((M, N, C), float)
+
+    kernel = np.zeros((3, 3, C))
+    kernel[:, :, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+    kernel[:, :, 1] = np.array([[0, 1, 0], [1, 4, 1], [0, 1, 0]])
+    kernel[:, :, 2] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+
+    for c in range(C):
+        It[:, :, c] = T[:, :, c] * mosaic
+        Ir[:, :, c] = correlate(It[:, :, c], kernel[:, :, c], mode="mirror") / 4
+
+    return np.clip(Ir, 0.0, 1.0)
 \end{lstlisting}
 
 \subsection{\sffamily Bonus: Malvar, He y Cutler 2004}
 
-Además se implementó el algoritmo de Malvar, He y Cutler \cite{malvar2004high}, el cual usa filtros lineales $5 \times 5$ diseñados para reconstruir los canales faltantes en el patrón Bayer. A diferencia de la interpolación bicúbica independiente, este método incorpora correcciones de gradiente y aprovecha mejor la correlación local entre canales, lo que reduce artefactos en bordes, texturas y cambios abruptos de intensidad.
+Además se implementó el algoritmo de Malvar, He y Cutler \cite{malvar2004high}, el cual usa filtros lineales $5 \times 5$ diseñados para reconstruir los canales faltantes en el patrón Bayer. A diferencia de la interpolación bilineal con filtros $3 \times 3$, este método incorpora correcciones de gradiente y aprovecha mejor la correlación local entre canales, lo que reduce artefactos en bordes, texturas y cambios abruptos de intensidad.
 
-La figura \ref{fig:comparacion_metodos} compara visualmente la reconstrucción bicúbica y Malvar2004 para la imagen 01.
+La figura \ref{fig:comparacion_metodos} compara visualmente la reconstrucción bilineal y Malvar2004 para la imagen 01.
 
 \begin{figure}[!h]
     \centering
     \includegraphics[width=0.95\linewidth]{Fig/kodak01_comparacion_metodos.png}
-    \caption{Comparación visual entre imagen original, reconstrucción bicúbica y reconstrucción con Malvar2004.}
+    \caption{Comparación visual entre imagen original, reconstrucción bilineal y reconstrucción con Malvar2004.}
     \label{fig:comparacion_metodos}
 \end{figure}
 
@@ -178,7 +247,7 @@ La tabla \ref{tab:resumen_metricas} resume los resultados sobre las 24 imágenes
         \toprule
         Método & PSNR prom. & PSNR std. & SSIM prom. & SSIM std. & SAM prom. & SAM std. \\
         \midrule
-        Bicúbica & 29.3046 & 2.9888 & 0.8857 & 0.0425 & 2.7483 & 1.2310 \\
+        Bilineal & 29.4849 & 2.8141 & 0.8917 & 0.0399 & 2.4072 & 1.0290 \\
         Malvar2004 & 34.6940 & 2.5837 & 0.9681 & 0.0082 & 1.7049 & 0.6901 \\
         \bottomrule
     \end{tabular}
@@ -187,7 +256,7 @@ La tabla \ref{tab:resumen_metricas} resume los resultados sobre las 24 imágenes
 \begin{figure}[!h]
     \centering
     \includegraphics[width=0.9\linewidth]{Fig/comparacion_metricas.png}
-    \caption{Comparación de métricas promedio entre interpolación bicúbica y Malvar2004.}
+    \caption{Comparación de métricas promedio entre interpolación bilineal y Malvar2004.}
     \label{fig:comparacion_metricas}
 \end{figure}
 
@@ -195,9 +264,11 @@ Los resultados por imagen se guardaron en el archivo \texttt{resultados\_metrica
 
 \section{\sffamily Conclusiones}
 
-Se implementó exitosamente un sistema de fotografía computacional basado en un mosaico Bayer RGGB. La interpolación bicúbica logró reconstrucciones razonables, con un PSNR promedio de 29.3046 dB, SSIM promedio de 0.8857 y SAM promedio de 2.7483 grados. Esto indica que el método conserva buena parte de la estructura visual, aunque presenta limitaciones en bordes y texturas finas debido a que cada canal se interpola de forma independiente.
+Se implementó exitosamente un sistema de fotografía computacional basado en un mosaico Bayer RGGB. La interpolación bilineal logró reconstrucciones razonables, con un PSNR promedio de 29.4849 dB, SSIM promedio de 0.8917 y SAM promedio de 2.4072 grados. Esto indica que el método conserva buena parte de la estructura visual y mantiene una relación espectral aceptable entre los canales RGB.
 
-El algoritmo Malvar2004 obtuvo mejores resultados en todas las métricas: el PSNR promedio aumentó a 34.6940 dB, el SSIM promedio subió a 0.9681 y el SAM promedio bajó a 1.7049 grados. La mejora se explica porque este método usa filtros lineales con corrección de gradiente, incorporando información local y correlación entre canales. Por lo tanto, para el dataset Kodak, Malvar2004 entrega una reconstrucción más precisa y consistente que la interpolación bicúbica independiente.
+No obstante, la reconstrucción bilineal presenta limitaciones visuales. En algunas imágenes se observan franjas tipo arcoíris, falso color y errores cerca de bordes o texturas finas. Estos artefactos aparecen porque el método usa filtros locales fijos y no adapta la interpolación a la dirección de los bordes ni a la correlación entre canales.
+
+El algoritmo Malvar2004 obtuvo mejores resultados en todas las métricas: el PSNR promedio aumentó a 34.6940 dB, el SSIM promedio subió a 0.9681 y el SAM promedio bajó a 1.7049 grados. La mejora se explica porque este método usa filtros lineales con corrección de gradiente, incorporando información local y correlación entre canales. Por lo tanto, para el dataset Kodak, Malvar2004 entrega una reconstrucción más precisa, consistente y con menos artefactos que la interpolación bilineal base.
 
 %-------------------------------------------------------------------------
 % BIBLIOGRAPHY
