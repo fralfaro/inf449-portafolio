@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 # 1. Read the RAW DNG
 # ---------------------------------------------------------
 
-filename = "inputDNG.dng"
+filename = "demo.dng"
 
 with rawpy.imread(filename) as raw:
 
