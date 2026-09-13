@@ -1,291 +1,686 @@
-%-------------------------------------------------------------------------
-% Informe Tarea 2: Demosaicking neuronal y basado en fisica
-%-------------------------------------------------------------------------
-\documentclass[a4paper,11pt]{article}
+\documentclass[11pt,a4paper]{article}
 
 \usepackage[a4paper,margin=2.5cm]{geometry}
-\usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[spanish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
 \usepackage{amsmath,amssymb}
-\usepackage{booktabs}
 \usepackage{graphicx}
-\usepackage{hyperref}
-\usepackage{xcolor}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{pdflscape}
 \usepackage{listings}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{hyperref}
 
-\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=MidnightBlue,
+    citecolor=MidnightBlue,
+    urlcolor=MidnightBlue,
+    pdftitle={Demosaicking neuronal con CNN y SIREN},
+    pdfauthor={Francisco Alfaro Medina}
+}
+
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{0.55em}
+\setlength{\parskip}{0.65em}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.15}
+\captionsetup{font=small,labelfont=bf}
 
+\definecolor{codebg}{RGB}{247,248,250}
+\definecolor{codecomment}{RGB}{40,120,65}
 \lstset{
     language=Python,
-    basicstyle=\small\ttfamily,
-    breaklines=true,
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{MidnightBlue},
+    commentstyle=\color{codecomment},
+    stringstyle=\color{BrickRed},
     frame=single,
+    rulecolor=\color{gray!45},
+    breaklines=true,
     showstringspaces=false,
     columns=fullflexible
 }
 
-\title{
-    \includegraphics[width=5cm]{Fig/usm.png}\\[0.8cm]
-    \large Universidad Técnica Federico Santa María\\
-    \large Departamento de Informática\\[0.5cm]
-    \LARGE\textbf{Informe Tarea 2}\\[0.2cm]
-    \Large Demosaicking RGB mediante representaciones implícitas y redes convolucionales
+% Las figuras se guardan desde los notebooks despues de ejecutar el entrenamiento.
+% Si aun no existen, el informe conserva un recuadro informativo y sigue compilando.
+\newcommand{\reportfigure}[3]{%
+    \begin{figure}[H]
+        \centering
+        \IfFileExists{#1}{%
+            \includegraphics[width=0.98\linewidth,height=0.72\textheight,keepaspectratio]{#1}%
+        }{%
+            \fbox{\parbox{0.82\linewidth}{\centering\vspace{1.2cm}
+            Figura generada por el notebook al ejecutar la celda correspondiente.
+            \vspace{1.2cm}}}%
+        }
+        \caption{#2}
+        \label{#3}
+    \end{figure}%
 }
 
-\author{Francisco Alfaro Medina}
+\title{
+    \includegraphics[width=5.7cm]{Fig/usm.png}\\[0.35cm]
+    \large Universidad Técnica Federico Santa María\\
+    Departamento de Informática\\[0.35cm]
+    \rule{\linewidth}{0.5pt}\\[0.25cm]
+    \LARGE\textbf{Demosaicking neuronal}\\
+    \Large CNN y representaciones implícitas SIREN\\[-0.05cm]
+    \rule{\linewidth}{1.5pt}
+}
+\author{\large Francisco Alfaro Medina}
 \date{Septiembre de 2026}
 
 \begin{document}
-
 \maketitle
+\thispagestyle{empty}
 
 \begin{abstract}
-En este trabajo se reconstruye una imagen RGB a partir de una medición mosaico Bayer proveniente de un archivo digital negativo (DNG). Se comparan una interpolación bilineal, el demosaicking de OpenCV, una representación neuronal implícita tipo INR-SIREN y una red neuronal convolucional. La CNN se entrena con parches de imágenes Kodak y se evalúa sobre imágenes no vistas. Además, se implementa una arquitectura encoder--decoder inspirada en la Figura 3 del enunciado y una variante con mayor capacidad. Finalmente, los métodos se aplican a una captura DNG real, incorporando revelado con \texttt{rawpy}, corrección de color y gamma sRGB. En la prueba controlada la INR-SIREN obtuvo el mejor resultado, mientras que en Kodak la interpolación bilineal superó a la CNN entrenada. La CNN mejorada redujo el error respecto de la arquitectura base, aunque no alcanzó todavía el desempeño de la línea base clásica.
+Este informe estudia la reconstrucción de una imagen RGB a partir de una medición incompleta producida por un filtro Bayer. Se implementan dos aproximaciones neuronales independientes. La primera es una red convolucional encoder--decoder entrenada de forma supervisada con parches del dataset Kodak. La segunda es una representación implícita SIREN que se ajusta individualmente a cada imagen usando solamente la medición Bayer. Ambos notebooks generan las mismas visualizaciones: imagen original, reconstrucción, métricas objetivas y una ampliación de la cara del primer loro verde de la imagen Kodak 23. La CNN base reproduce la arquitectura de la Figura 3 y contiene 14.967 parámetros entrenables.
 \end{abstract}
 
-\section{Introducción}
+\tableofcontents
+\newpage
 
-Un sensor de imagen con filtro Bayer registra una sola intensidad por posición espacial. El patrón de filtros asigna cada píxel a uno de los canales rojo, verde o azul, por lo que la medición contiene información incompleta para formar una imagen RGB. El objetivo del demosaicking es estimar los dos canales faltantes en cada posición y reconstruir una imagen de tres canales.
+\section{Contexto de la tarea}
 
-El enunciado solicita implementar métodos neuronales para recuperar RGB desde datos RAW/DNG, comparar los resultados con el procesamiento de la cámara y con algoritmos clásicos, y estudiar el efecto de modificar la arquitectura o la estrategia de entrenamiento. En particular, se consideran una representación implícita y una CNN basada en la arquitectura de la Figura 3.
+La Tarea 2 solicita reconstruir una imagen RGB a partir de una captura real de mosaico Bayer obtenida con un dispositivo electrónico, como un teléfono, una tablet o una cámara. El objetivo es adquirir experiencia entrenando y utilizando redes neuronales para demosaicking, comparando sus resultados con algoritmos tradicionales y con el procesamiento incorporado del dispositivo.
 
-\section{Datos y diseño experimental}
+El enunciado propone dos aproximaciones neuronales. La primera es una representación neuronal implícita basada en funciones sinusoidales, denominada SIREN. La segunda es una red convolucional de demosaicking con la arquitectura mostrada en la Figura 3 del enunciado. Además, se solicita entrenar la CNN, probar modificaciones agregando capas o convoluciones, comparar con OpenCV y discutir la experiencia de entrenamiento.
 
-Se utilizó el archivo \texttt{demo.dng}, descargado desde un repositorio público, junto con \texttt{demo.jpg} como referencia visual procesada por la cámara. Esta elección corresponde a la alternativa indicada en el enunciado para el caso en que no se disponga de una captura RAW propia de un teléfono. El DNG tiene una medición visible de tamaño $3060\times4080$ y el JPG tiene tamaño $4080\times3060\times3$.
+El presente informe organiza el trabajo en dos notebooks, manteniendo una separación clara entre ambos experimentos:
 
-También se utilizó el conjunto Kodak, compuesto por 24 imágenes RGB. Se reservaron 20 imágenes para entrenamiento y 4 imágenes completas para prueba. Cada imagen se dividió en parches de $64\times64$, obteniéndose 1920 parches de entrenamiento y 384 parches de prueba. Las imágenes de prueba no fueron utilizadas durante el entrenamiento.
+\begin{enumerate}[label=\arabic*.]
+    \item \texttt{cnnDemosaicing.ipynb}: entrenamiento supervisado de una CNN con Kodak, variantes de capacidad y evaluación sobre imágenes no vistas.
+    \item \texttt{demosaickingSiren.ipynb}: ajuste físico de una SIREN independiente para cada imagen de prueba.
+\end{enumerate}
 
-Al leer el DNG con \texttt{rawpy}, se obtuvo el patrón CFA:
+Para mantener un alcance controlado, este informe utiliza exclusivamente esos dos notebooks y sus salidas de ejecución. La parte de captura RAW/DNG se deja explícitamente para una etapa posterior; por ahora el análisis se concentra en el dataset Kodak, las arquitecturas neuronales, sus métricas y sus reconstrucciones visuales.
 
-\[
-\begin{bmatrix}
-G & R\\
-B & G
-\end{bmatrix},
-\qquad \text{patrón } GRBG.
-\]
+La Figura~\ref{fig:enunciado-cnn} reproduce el esquema de arquitectura entregado en la tarea. La tabla del enunciado muestra una entrada de $128\times128\times4$, reducción hasta $8\times8$ y reconstrucción RGB de $256\times256\times3$. El notebook conserva esa arquitectura base y utiliza parches $64\times64\times4\to128\times128\times3$ durante el entrenamiento para controlar el costo computacional.
 
-Los niveles negro reportados fueron $[63,63,63,63]$ y el nivel blanco fue 1023. La medición se normalizó después de descontar el nivel negro y se acotó al intervalo $[0,1]$.
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.98\linewidth]{Fig/dng_rawpy_jpg.png}
-\caption{Medición RAW normalizada, revelado básico mediante \texttt{rawpy} y JPG procesado por la cámara.}
-\label{fig:dng_rawpy_jpg}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\linewidth]{Fig/homework2_arquitectura_cnn.jpg}
+    \caption{Arquitectura y ejemplo de reconstrucción incluidos en el PDF de la Tarea 2.}
+    \label{fig:enunciado-cnn}
 \end{figure}
 
-\section{Métodos}
+\section{Objetivos y alcance}
 
-\subsection{Modelo de mosaico Bayer}
+El objetivo es implementar, entrenar y comparar redes neuronales para demosaicking RGB. El flujo se divide en dos notebooks independientes:
 
-Sea $I\in\mathbb{R}^{H\times W\times3}$ una imagen RGB y sean $M_R$, $M_G$ y $M_B$ las máscaras binarias del patrón Bayer. La medición mosaico se construye como
+\begin{enumerate}[label=\arabic*.]
+    \item \texttt{cnnDemosaicing.ipynb}: CNN compartida, entrenada con Kodak y evaluada sobre imágenes no vistas.
+    \item \texttt{demosaickingSiren.ipynb}: SIREN ajustada por separado a cada imagen de prueba.
+\end{enumerate}
 
-\[
-Y=M_R\odot I_R+M_G\odot I_G+M_B\odot I_B.
-\]
+La comparación se centra en el mismo conjunto de cuatro imágenes Kodak reservadas para prueba. En particular, se utiliza la imagen Kodak 23, que contiene el loro verde y el loro rojo, para el análisis visual detallado. El recorte usado en ambos notebooks es
 
-Para la CNN, la entrada se representa como cuatro canales:
+\begin{equation}
+    (x_0,y_0,x_1,y_1)=(60,165,300,365),
+    \label{eq:zoom}
+\end{equation}
 
-\[
-X=[Y,M_R,M_G,M_B],
-\]
+que corresponde a la cara del primer loro verde.
 
-mientras que la salida esperada corresponde a la imagen RGB completa.
+\section{Fundamento del problema}
 
-\subsection{Interpolación bilineal y OpenCV}
+\subsection{Medición con filtro Bayer}
 
-La interpolación bilineal reconstruye cada canal por separado utilizando únicamente las muestras conocidas y filtros locales $3\times3$. Para rojo y azul se empleó
+Sea $I\in[0,1]^{H\times W\times3}$ una imagen RGB. Un sensor Bayer mide solamente un canal por posición espacial. En este trabajo se usa el patrón \texttt{GRBG}:
 
-\[
-H_{R,B}=\begin{bmatrix}1&2&1\\2&4&2\\1&2&1\end{bmatrix},
-\]
+\begin{equation}
+    \begin{bmatrix}
+        G & R\\
+        B & G
+    \end{bmatrix}.
+    \label{eq:grbg}
+\end{equation}
 
-y para verde,
+La medición escalar $Y$ se obtiene mediante
 
-\[
-H_G=\begin{bmatrix}0&1&0\\1&4&1\\0&1&0\end{bmatrix}.
-\]
+\begin{equation}
+    Y(i,j)=\sum_{c\in\{R,G,B\}}M_c(i,j)I_c(i,j),
+    \label{eq:medicion}
+\end{equation}
 
-Como segunda línea base se utilizó \texttt{cv2.cvtColor} con la conversión Bayer correspondiente al patrón \texttt{GRBG}. La salida BGR de OpenCV se invirtió a RGB para mantener la convención utilizada por el resto del notebook.
+donde $M_c$ es una máscara binaria que indica el canal medido en $(i,j)$. El problema de demosaicking consiste en estimar los dos canales faltantes a partir de $Y$.
 
-\subsection{Representación neuronal implícita}
+Para la CNN, los cuatro valores de cada bloque Bayer $2\times2$ se empaquetan como canales:
 
-La INR-SIREN representa la imagen como una función neuronal continua de las coordenadas espaciales $(x,y)$. La red recibe las coordenadas normalizadas y produce tres intensidades RGB. Sus parámetros se optimizan directamente sobre el mosaico observado, utilizando una pérdida de consistencia con las muestras Bayer conocidas. Este procedimiento se realiza para la imagen específica, por lo que puede obtener un ajuste muy preciso, pero requiere volver a entrenar la representación para cada captura.
+\begin{equation}
+    X_{\mathrm{CFA}}=[Y_{00},Y_{01},Y_{10},Y_{11}]
+    \in\mathbb{R}^{H/2\times W/2\times4}.
+    \label{eq:packed}
+\end{equation}
 
-\subsection{CNN inspirada en la Figura 3}
+Esta representación mantiene la información espacial de las cuatro posiciones y permite que la CNN produzca una imagen RGB con el doble de resolución espacial de su entrada.
 
-La CNN implementada utiliza una arquitectura encoder--decoder. El encoder reduce la resolución mediante convoluciones con stride y capas de pooling. En el cuello de botella se utilizan bloques residuales. El decoder recupera la resolución mediante convoluciones transpuestas y suma características de distintas escalas mediante conexiones tipo \texttt{add}.
+\subsection{Pérdida de consistencia Bayer}
 
-Para un parche de entrada de $64\times64$, la representación se reduce hasta $4\times4$ y luego se reconstruye hasta $64\times64$. La CNN base utiliza 16 canales ocultos y 4 bloques residuales. La salida se limita al intervalo $[0,1]$ mediante una función sigmoide.
+La reconstrucción RGB de una SIREN se vuelve a proyectar al sensor. Si $\hat I$ es la salida de la red, la medición reconstruida es
 
-La función de entrenamiento combina una pérdida RGB supervisada con una pérdida de consistencia física:
+\begin{equation}
+    \hat Y(i,j)=\sum_{c\in\{R,G,B\}}M_c(i,j)\hat I_c(i,j).
+    \label{eq:reproyeccion}
+\end{equation}
 
-\[
-\mathcal{L}=\mathcal{L}_{RGB}+\lambda\mathcal{L}_{\mathrm{fisica}},
-\]
+La pérdida utilizada para SIREN es
 
-donde la segunda componente penaliza que la reconstrucción no reproduzca la medición Bayer observada. Se utilizaron seis épocas y $\lambda=0.1$ en la CNN base.
+\begin{equation}
+    \mathcal{L}_{\mathrm{Bayer}}=
+    \frac{1}{HW}\sum_{i,j}\left(Y(i,j)-\hat Y(i,j)\right)^2.
+    \label{eq:loss-siren}
+\end{equation}
 
-\subsection{Variante mejorada}
+La imagen RGB original se utiliza solamente para evaluar la reconstrucción. No se usa como objetivo durante el ajuste de SIREN.
 
-Para estudiar el efecto de aumentar la capacidad, se entrenó una variante con 32 canales ocultos y 6 bloques residuales. También se entrenó una versión de la misma arquitectura con $\lambda=0$, eliminando la pérdida de consistencia física. Las tres variantes utilizaron las mismas imágenes, parches y número de épocas.
+\section{Datos y protocolo experimental}
 
-\subsection{Revelado y corrección de color del DNG}
+\subsection{Dataset Kodak}
 
-El DNG no es una imagen RGB lista para visualizar. Por esta razón, el revelado de referencia se realizó con \texttt{rawpy} usando el balance de blancos de la cámara, salida de 16 bits, espacio sRGB, gamma $(1,1)$ y demosaicking AHD. Sobre las reconstrucciones obtenidas por los diferentes métodos se aplicó una matriz de corrección de color:
+Se utilizan las 24 imágenes RGB del dataset Kodak. Todas se convierten a RGB, se normalizan mediante $I\leftarrow I/255$ y se llevan a un tamaño común de $512\times768\times3$.
 
-\[
-C=\begin{bmatrix}
-1.50&-0.30&-0.20\\
--0.20&1.30&-0.10\\
--0.10&-0.20&1.30
-\end{bmatrix}.
-\]
+La partición se realiza por imagen completa:
 
-Si $\hat I$ es una reconstrucción RGB lineal normalizada, la corrección se calcula como
+\begin{itemize}
+    \item imágenes 01--20: entrenamiento de la CNN;
+    \item imágenes 21--24: prueba y comparación visual;
+    \item la SIREN se entrena individualmente sobre cada una de las cuatro imágenes de prueba.
+\end{itemize}
 
-\[
-\hat I_{cc}(i,j)=C\hat I(i,j),
-\]
+Para la CNN, cada imagen de entrenamiento se divide en $4\times6=24$ parches RGB de $128\times128$. Esto produce
 
-seguida de una conversión de RGB lineal a sRGB para visualización. La misma matriz y la misma gamma se aplicaron a las salidas del DNG de la interpolación bilineal, OpenCV, CNN e INR-SIREN.
+\begin{equation}
+    20\times24=480\quad\text{parches de entrenamiento},
+    \qquad
+    4\times24=96\quad\text{parches de prueba}.
+    \label{eq:patches}
+\end{equation}
+
+Cada parche RGB produce una entrada Bayer empaquetada de $64\times64\times4$ y un objetivo de $128\times128\times3$.
+
+\subsection{Líneas base}
+
+Como referencia visual se implementa una conversión Bayer mediante OpenCV. La entrada se codifica con el patrón \texttt{GRBG} y la salida se transforma a RGB. Esta línea base no tiene parámetros entrenables y no requiere optimización.
+
+\section{Representación neuronal implícita SIREN}
+
+\subsection{Arquitectura}
+
+SIREN representa una imagen como una función continua
+
+\begin{equation}
+    f_\theta:\mathbb{R}^2\longrightarrow[0,1]^3,
+    \qquad (x,y)\mapsto(R,G,B).
+    \label{eq:siren-function}
+\end{equation}
+
+Las coordenadas se normalizan al cuadrado $[-1,1]^2$. La red utiliza una capa sinusoidal inicial, tres capas sinusoidales ocultas de 256 unidades y una capa lineal final de tres salidas. La sigmoide final mantiene los valores RGB en $[0,1]$.
+
+El número de parámetros entrenables es
+
+\begin{equation}
+    (2\cdot256+256)+3(256\cdot256+256)+(256\cdot3+3)
+    =198\,915.
+    \label{eq:siren-params}
+\end{equation}
+
+La descomposición por capas es:
+
+\begin{table}[H]
+\centering
+\caption{Parámetros de la SIREN utilizada en el notebook.}
+\label{tab:siren-layers}
+\begin{tabular}{p{5.0cm}p{4.0cm}r}
+\toprule
+Capa & Transformación & Parámetros\\
+\midrule
+SineLayer inicial & $2\to256$ & 768\\
+SineLayer oculta 1 & $256\to256$ & 65792\\
+SineLayer oculta 2 & $256\to256$ & 65792\\
+SineLayer oculta 3 & $256\to256$ & 65792\\
+Linear final & $256\to3$ & 771\\
+\midrule
+\textbf{Total entrenable} & & \textbf{198915}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La impresión de la red se produce directamente con:
+
+\begin{lstlisting}[caption={Impresión de la arquitectura SIREN.},label={lst:siren-summary}]
+siren_example = SirenDemosaic().to(DEVICE)
+print(siren_example)
+print(parameter_count(siren_example))
+\end{lstlisting}
+
+\subsection{Entrenamiento}
+
+Para cada imagen, el notebook genera una grilla de coordenadas y selecciona lotes aleatorios de 16.384 píxeles. En cada paso se calcula la salida RGB, se selecciona el canal Bayer observado mediante las máscaras y se minimiza la ecuación~\eqref{eq:loss-siren}. La configuración reproducible es:
+
+\begin{table}[H]
+\centering
+\caption{Configuración de entrenamiento de SIREN.}
+\label{tab:siren-config}
+\begin{tabular}{lr}
+\toprule
+Parámetro & Valor\\
+\midrule
+Capas ocultas & 3\\
+Unidades por capa & 256\\
+Pasos por imagen & 1000\\
+Batch de coordenadas & 16384\\
+Learning rate & $10^{-4}$\\
+Activación & seno\\
+Pérdida & MSE Bayer\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La principal diferencia conceptual con la CNN es que SIREN no aprende un modelo común para todas las imágenes: cada imagen tiene sus propios parámetros $\theta$.
+
+El ciclo de entrenamiento se resume en:
+
+\begin{lstlisting}[caption={Ajuste físico de una SIREN para una imagen.},label={lst:siren-training}]
+mosaic = rgb_to_bayer(image)
+masks = bayer_masks(height, width)
+coords = build_coordinate_grid(height, width)
+
+prediction = model(coords[index_batch])
+predicted_mosaic = torch.sum(
+    prediction * mask_tensor[index_batch], dim=-1
+)
+loss = F.mse_loss(predicted_mosaic, observed[index_batch])
+loss.backward()
+optimizer.step()
+\end{lstlisting}
+
+La salida de cada paso se imprime como pérdida Bayer. La curva de pérdida permite verificar si la red está reproduciendo la medición, pero no garantiza por sí sola que los canales RGB no observados sean correctos. Por eso el notebook también calcula PSNR y SSIM usando la imagen original únicamente durante la evaluación.
+
+\section{Red convolucional CNN}
+
+\subsection{Arquitectura base de la Figura 3}
+
+La CNN base es un encoder--decoder con conexiones de salto. Para verificar la arquitectura se utiliza una entrada $128\times128\times4$ y se obtiene una salida RGB de $256\times256\times3$. Durante el entrenamiento se usan entradas de $64\times64\times4$ y objetivos de $128\times128\times3$.
+
+La secuencia espacial de la arquitectura es
+
+\begin{equation}
+    128\to64\to32\to16\to8\to16\to32\to64\to128\to256.
+    \label{eq:cnn-scales}
+\end{equation}
+
+La implementación reproduce las capas de la Figura 3: convoluciones $2\times2$ y $3\times3$, dos max-pooling, convoluciones transpuestas y conexiones \texttt{Add}. La configuración base usa 16 canales internos y no agrega bloques residuales adicionales.
+
+\begin{table}[H]
+\centering
+\caption{Salida y parámetros por capa de la CNN base para una entrada $128\times128\times4$.}
+\label{tab:cnn-layers}
+\scriptsize
+\begin{tabular}{p{4.2cm}p{4.4cm}r}
+\toprule
+Capa & Forma de salida & Parámetros\\
+\midrule
+Input & $(None,128,128,4)$ & 0\\
+Conv2D, $k=2$, stride 2 & $(None,64,64,16)$ & 272\\
+MaxPooling2D & $(None,32,32,16)$ & 0\\
+Conv2D, $k=3$ & $(None,32,32,16)$ & 2320\\
+Conv2D, $k=3$, stride 2 & $(None,16,16,16)$ & 2320\\
+MaxPooling2D & $(None,8,8,16)$ & 0\\
+Conv2D, $k=3$ & $(None,8,8,16)$ & 2320\\
+Conv2DTranspose, stride 2 & $(None,16,16,16)$ & 2320\\
+Conv2DTranspose, stride 2 & $(None,32,32,16)$ & 2320\\
+Add (skip 32) & $(None,32,32,16)$ & 0\\
+Conv2DTranspose, stride 2 & $(None,64,64,16)$ & 2320\\
+Add (skip 64) & $(None,64,64,16)$ & 0\\
+Conv2DTranspose $16\to4$, stride 2 & $(None,128,128,4)$ & 580\\
+Add (skip input) & $(None,128,128,4)$ & 0\\
+Conv2DTranspose $4\to3$, stride 2 & $(None,256,256,3)$ & 111\\
+Conv2D final $3\to3$ & $(None,256,256,3)$ & 84\\
+\midrule
+\textbf{Total entrenable} & & \textbf{14967}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Por lo tanto,
+
+\begin{equation}
+    N_{\mathrm{CNN\ base}}=14\,967
+    \label{eq:cnn-params}
+\end{equation}
+
+El cálculo coincide con el `assert` incluido en \texttt{cnnDemosaicing.ipynb}. La red se entrena con error cuadrático medio RGB:
+
+La impresión utilizada en el notebook es:
+
+\begin{lstlisting}[caption={Verificación de la arquitectura y del número de parámetros.},label={lst:cnn-summary}]
+base_model = build_demosaic_cnn(name="cnn_base_figura_3")
+base_model.compile(optimizer=Adam(LEARNING_RATE), loss="mse")
+base_model.summary()
+display(model_parameter_table(base_model))
+print(base_model.count_params())
+
+check_input = np.zeros((1, 128, 128, 4), dtype=np.float32)
+check_output = base_model(check_input, training=False)
+print(check_input.shape, check_output.shape)
+\end{lstlisting}
+
+La salida esperada es una entrada $(1,128,128,4)$, una salida $(1,256,256,3)$ y 14.967 parámetros. La tabla~\ref{tab:cnn-layers} reorganiza esta impresión para hacer explícitas las dimensiones y el aporte de cada capa.
+
+\begin{equation}
+    \mathcal{L}_{\mathrm{CNN}}=
+    \frac{1}{3HW}\sum_{i,j,c}
+    \left(I_c(i,j)-\hat I_c(i,j)\right)^2.
+    \label{eq:loss-cnn}
+\end{equation}
+
+El entrenamiento muestra por época la pérdida de entrenamiento y de prueba. La cantidad de épocas se controla mediante \texttt{EPOCHS\_BASE=100} y puede aumentarse para realizar una réplica más extensa.
+
+\subsection{Variaciones}
+
+Después de entrenar la arquitectura base se estudian dos variantes:
+
+\begin{table}[H]
+\centering
+\caption{Configuraciones CNN comparadas.}
+\label{tab:cnn-variants}
+\begin{tabular}{lrrr}
+\toprule
+Modelo & Canales & Bloques residuales & Parámetros\\
+\midrule
+CNN base Figura 3 & 16 & 0 & 14,967\\
+CNN 32 canales & 32 & 0 & 57,383\\
+CNN 32 canales + residuales & 32 & 4 & 131,367\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Las tres redes usan el mismo dataset, los mismos parches y la misma función de pérdida. La diferencia es la capacidad del modelo, lo que permite estudiar si una representación más grande mejora la reconstrucción de imágenes no vistas.
+
+El entrenamiento de cada variante imprime el número de parámetros y conserva las curvas de pérdida de entrenamiento y prueba. La tabla~\ref{tab:cnn-variants} entrega el conteo teórico; la tabla de parámetros que aparece en el notebook confirma el mismo valor mediante \texttt{model.count\_params()}.
+
+La ejecución registrada utilizó 100 épocas por modelo. Los tiempos medidos fueron aproximadamente 34,4 s para la CNN base, 33,4 s para la variante de 32 canales y 39,3 s para la variante con bloques residuales. La Figura~\ref{fig:cnn-training} muestra las curvas MSE de entrenamiento y validación. La separación entre ambas curvas permite comprobar si el aumento de capacidad produce una mejora que también se mantiene sobre los parches de prueba.
+
+\reportfigure{Fig/cnn_entrenamiento_curvas.jpg}{Curvas MSE de entrenamiento y prueba para las tres CNN durante 100 épocas.}{fig:cnn-training}
 
 \section{Métricas}
 
-Se utilizaron MSE, PSNR y SSIM. El error cuadrático medio se define como
+Las métricas se calculan entre la imagen RGB original $I$ y una reconstrucción $\hat I$, ambas normalizadas a $[0,1]$.
 
-\[
-\operatorname{MSE}(I,\hat I)=\frac{1}{3HW}
-\sum_{i,j,c}(I_c(i,j)-\hat I_c(i,j))^2.
-\]
+\subsection{MSE y PSNR}
 
-El PSNR se calculó con rango dinámico 1:
+\begin{equation}
+    \operatorname{MSE}(I,\hat I)=
+    \frac{1}{3HW}\sum_{i,j,c}(I_c(i,j)-\hat I_c(i,j))^2.
+    \label{eq:mse}
+\end{equation}
 
-\[
-\operatorname{PSNR}=10\log_{10}\left(\frac{1}{\operatorname{MSE}}\right).
-\]
+\begin{equation}
+    \operatorname{PSNR}(I,\hat I)=
+    10\log_{10}\left(\frac{1}{\operatorname{MSE}(I,\hat I)}\right).
+    \label{eq:psnr}
+\end{equation}
 
-SSIM se utilizó como medida complementaria de similitud estructural. En todas las métricas, un MSE menor y valores mayores de PSNR y SSIM indican una mejor reconstrucción.
+Un MSE menor y un PSNR mayor indican una reconstrucción más cercana a la referencia.
 
-\section{Resultados}
+\subsection{SSIM}
 
-\subsection{Prueba controlada con \texttt{demo.jpg}}
+SSIM mide similitud estructural local considerando luminancia, contraste y estructura. Se calcula con una ventana espacial y la opción \texttt{channel\_axis=-1}, tal como en los notebooks. Valores cercanos a uno indican mayor similitud.
 
-Se generó un mosaico Bayer sintético a partir de \texttt{demo.jpg}, por lo que en esta prueba se conoce la imagen RGB original antes del mosaico.
+\section{Resultados y visualización}
 
-\begin{table}[!ht]
+\subsection{Resultados numéricos}
+
+El notebook CNN genera la tabla \texttt{results\_df}, con una fila por modelo y las columnas MSE, PSNR, SSIM y número de parámetros. El notebook SIREN genera \texttt{metrics\_df}, con una fila por método y por imagen de prueba. Estas tablas son la fuente de los resultados numéricos del informe. La ejecución documentada utilizó semilla 42, 100 épocas para cada CNN y 1000 pasos para cada SIREN.
+
+Los valores estructurales reproducibles son:
+
+\begin{table}[H]
 \centering
-\caption{Resultados de la prueba controlada con \texttt{demo.jpg}.}
-\label{tab:controlado}
-\begin{tabular}{lrrr}
+\caption{Resultados que se obtienen directamente del protocolo.}
+\label{tab:reproducible}
+\begin{tabular}{lr}
 \toprule
-Método & MSE & PSNR [dB] & SSIM\\
+Elemento & Resultado reproducible\\
 \midrule
-Interpolación bilineal & 0.0002 & 36.0545 & 0.9690\\
-OpenCV & 0.0084 & 20.7544 & 0.9053\\
-INR-SIREN & 0.0001 & 41.0670 & 0.9791\\
+Imágenes totales Kodak & 24\\
+Imágenes de entrenamiento CNN & 20\\
+Imágenes de prueba & 4\\
+Parches de entrenamiento & 480\\
+Parches de prueba & 96\\
+Parámetros CNN base & 14,967\\
+Parámetros SIREN & 198,915\\
+Imagen visual principal & Kodak 23\\
+Región ampliada & $(60,165,300,365)$\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-La INR-SIREN obtuvo el mejor resultado en las tres métricas. Esta ventaja es consistente con el hecho de que la INR se optimiza específicamente para la captura evaluada. La interpolación bilineal también obtuvo un resultado alto, mientras que OpenCV presentó un error considerablemente mayor en esta implementación.
+\subsubsection{Tabla de resultados numéricos de la ejecución}
 
-\begin{figure}[!ht]
+Los notebooks guardan las tablas en:
+
+\begin{itemize}
+    \item \texttt{resultados/cnn\_metrics.csv}, producido por la CNN;
+    \item \texttt{resultados/siren\_metrics.csv}, producido por SIREN.
+\end{itemize}
+
+La Tabla~\ref{tab:cnn-summary-results} resume la evaluación de las CNN sobre las cuatro imágenes no vistas. La variante de 32 canales obtiene el mayor PSNR promedio, por lo que se selecciona como mejor CNN. El número de parámetros no determina por sí solo el desempeño: la variante residual es la más grande, pero en esta corrida queda por debajo de la base y de la variante de 32 canales.
+
+\begin{table}[H]
 \centering
-\includegraphics[width=0.98\linewidth]{Fig/comparacion_controlada.png}
-\caption{Comparación visual en la prueba controlada: referencia RGB, mosaico Bayer y reconstrucciones.}
-\label{fig:comparacion_controlada}
-\end{figure}
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.98\linewidth]{Fig/errores_controlado.png}
-\caption{Mapas de error absoluto amplificado para la prueba controlada.}
-\label{fig:errores_controlado}
-\end{figure}
-
-\subsection{Generalización sobre Kodak}
-
-\begin{table}[!ht]
-\centering
-\caption{Resultados promedio sobre parches de prueba Kodak.}
-\label{tab:kodak}
-\begin{tabular}{lrrr}
+\caption{Resultados promedio de las CNN sobre Kodak 21--24.}
+\label{tab:cnn-summary-results}
+\scriptsize
+\begin{tabular}{p{5.0cm}rrrr}
 \toprule
-Método & MSE & PSNR [dB] & SSIM\\
+Modelo & Parámetros & MSE & PSNR [dB] & SSIM\\
 \midrule
-Interpolación bilineal & 0.0013 & 33.4489 & 0.9060\\
-OpenCV & 0.0261 & 19.1799 & 0.7996\\
-CNN multi-imagen & 0.0058 & 23.8272 & 0.7329\\
+CNN base Figura 3 & 14\,967 & 0.0031 & 25.3716 & 0.8427\\
+CNN 32 canales & 57\,383 & 0.0019 & \textbf{27.4779} & 0.8421\\
+CNN 32 canales + residuales & 131\,367 & 0.0039 & 24.4856 & 0.8075\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-En Kodak, la interpolación bilineal superó a la CNN base en las tres métricas. La CNN obtuvo un MSE aproximadamente 4.4 veces mayor que la bilineal y una diferencia de 9.62 dB en PSNR. Por lo tanto, la red aprendió a realizar una reconstrucción, pero su generalización no fue suficiente para superar a la línea base clásica con el entrenamiento utilizado.
+El comportamiento por imagen se detalla a continuación. Esta tabla es importante porque un promedio puede ocultar que una arquitectura funciona bien en una escena y mal en otra.
 
-\subsection{Variantes de la CNN}
-
-\begin{table}[!ht]
-\centering
-\caption{Comparación de variantes de arquitectura y pérdida.}
-\label{tab:variantes}
-\begin{tabular}{lrrrrr}
+\begin{longtable}{p{4.4cm}rrrr}
+\caption{Métricas de las CNN por imagen de prueba.}\label{tab:cnn-per-image}\\
 \toprule
-Método & Canales & Bloques & $\lambda$ & MSE prueba & Tiempo [s]\\
+Modelo e imagen & Parámetros & MSE & PSNR [dB] & SSIM\\
 \midrule
-CNN Figura 3 & 16 & 4 & 0.1 & 0.0050 & 4.9475\\
-CNN mejorada & 32 & 6 & 0.1 & 0.0033 & 5.4917\\
-CNN mejorada sin física & 32 & 6 & 0.0 & 0.0034 & 6.0720\\
+\endfirsthead
+\toprule
+Modelo e imagen & Parámetros & MSE & PSNR [dB] & SSIM\\
+\midrule
+\endhead
+CNN base -- 21 & 14\,967 & 0.0021 & 26.7013 & 0.8512\\
+CNN base -- 22 & 14\,967 & 0.0024 & 26.2671 & 0.8311\\
+CNN base -- 23 & 14\,967 & 0.0052 & 22.8198 & 0.8363\\
+CNN base -- 24 & 14\,967 & 0.0027 & 25.6983 & 0.8522\\
+\midrule
+CNN 32 -- 21 & 57\,383 & 0.0018 & 27.4211 & 0.8511\\
+CNN 32 -- 22 & 57\,383 & 0.0014 & 28.5388 & 0.8247\\
+CNN 32 -- 23 & 57\,383 & 0.0015 & 28.2902 & 0.8568\\
+CNN 32 -- 24 & 57\,383 & 0.0027 & 25.6617 & 0.8360\\
+\midrule
+CNN 32 + residuales -- 21 & 131\,367 & 0.0028 & 25.5795 & 0.7953\\
+CNN 32 + residuales -- 22 & 131\,367 & 0.0027 & 25.6195 & 0.8024\\
+CNN 32 + residuales -- 23 & 131\,367 & 0.0068 & 21.6809 & 0.8062\\
+CNN 32 + residuales -- 24 & 131\,367 & 0.0031 & 25.0624 & 0.8259\\
+\bottomrule
+\end{longtable}
+
+En Kodak 23, que es la imagen utilizada para el zoom del loro, la CNN de 32 canales alcanza $28.2902$ dB y SSIM $0.8568$. La CNN base obtiene $22.8198$ dB, mientras que agregar cuatro bloques residuales produce $21.6809$ dB en esta corrida. Por lo tanto, para las comparaciones visuales posteriores se utiliza la CNN de 32 canales.
+
+La evaluación de SIREN se muestra en la Tabla~\ref{tab:siren-results}. La fila de OpenCV es el promedio de las cuatro imágenes y las demás filas corresponden al ajuste independiente de una SIREN por imagen.
+
+\begin{table}[H]
+\centering
+\caption{Resultados de SIREN y referencia bilineal OpenCV sobre Kodak 21--24.}
+\label{tab:siren-results}
+\scriptsize
+\begin{tabular}{p{5.0cm}rrrr}
+\toprule
+Método & Parámetros & MSE & PSNR [dB] & SSIM\\
+\midrule
+Bilineal OpenCV, promedio & 0 & 0.0261 & 16.8867 & 0.7999\\
+SIREN imagen 21 & 198\,915 & 0.0038 & 24.1788 & 0.6963\\
+SIREN imagen 22 & 198\,915 & 0.0028 & 25.4815 & 0.6067\\
+SIREN imagen 23 & 198\,915 & 0.0013 & \textbf{28.7843} & \textbf{0.8579}\\
+SIREN imagen 24 & 198\,915 & 0.0053 & 22.7273 & 0.6027\\
+\midrule
+SIREN, promedio de imágenes & 198\,915 & 0.0033 & 25.2930 & 0.6909\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-La CNN mejorada redujo el MSE de 0.0050 a 0.0033, lo que corresponde a una disminución aproximada de 34\%. La eliminación de la pérdida física aumentó ligeramente el error a 0.0034. En esta corrida, el aumento de canales y bloques tuvo un efecto más importante que la pérdida física, aunque la consistencia física produjo una mejora pequeña frente a la arquitectura equivalente sin ella.
+La SIREN de Kodak 23 es la mejor SIREN según PSNR, con $28.7843$ dB. Esto coincide con la selección automática del notebook mediante \texttt{idxmax()}.
 
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.98\linewidth]{Fig/metricas_controlado.png}
-\caption{MSE, PSNR y SSIM obtenidos en la prueba controlada.}
-\label{fig:metricas_controlado}
+\begin{figure}[H]
+    \centering
+\includegraphics[width=0.98\linewidth]{Fig/kodak23_original_bayer_zoom.jpg}
+    \caption{Imagen Kodak 23, mosaico Bayer GRBG y zona común de análisis correspondiente a la cara del loro verde.}
+    \label{fig:kodak23-input}
 \end{figure}
 
-\subsection{Visualización de la captura DNG real}
+\subsection{Comparación visual de la imagen Kodak 23}
 
-La Figura~\ref{fig:dng_metodos_color} muestra el recorte central de la captura real después de aplicar la corrección de color y la conversión a sRGB. La comparación permite observar diferencias de color, ruido, nitidez y artefactos entre los métodos. En particular, la salida de la CNN presenta una cuadrícula visible en este recorte, lo que sugiere que el modelo todavía tiene dificultades al transferir el conocimiento aprendido en Kodak a una medición real de cámara.
+La comparación principal debe utilizar la misma imagen en ambos notebooks: \texttt{test\_images[2]}, correspondiente a Kodak 23. En la vista completa se muestran la referencia RGB y la reconstrucción. En la segunda fila se muestra el recorte definido por la ecuación~\eqref{eq:zoom}.
 
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.98\linewidth]{Fig/dng_metodos_color.png}
-\caption{Reconstrucciones sobre el DNG real después de la corrección de color, comparadas con el revelado de \texttt{rawpy} y el JPG de la cámara.}
-\label{fig:dng_metodos_color}
+El recorte fue escogido porque contiene la cara del primer loro verde. Es una región útil para inspeccionar bordes de alto contraste, líneas del rostro, contorno del pico, transiciones entre plumas verdes y amarillas y pequeños detalles de textura. La comparación no debe cambiar las coordenadas entre CNN y SIREN.
+
+La Figura~\ref{fig:kodak23-input} muestra la referencia y la medición antes de aplicar las redes. En la imagen mosaico cada píxel conserva una sola intensidad; los puntos de color que faltan deben ser inferidos por la CNN o por SIREN.
+
+El código utilizado en ambos notebooks es equivalente a:
+
+\begin{lstlisting}[caption={Comparación común con zoom para la imagen Kodak 23.},label={lst:zoom}]
+comparison_index = 2
+reference = test_images[comparison_index]
+prediction = predictions[comparison_index]
+
+compare_with_zoom(
+    reference,
+    {"modelo": prediction},
+    box=(60, 165, 300, 365),
+    title="Kodak 23 - cara del loro verde",
+)
+\end{lstlisting}
+
+\begin{figure}[H]
+    \centering
+    \begin{tabular}{cc}
+        \includegraphics[width=0.40\linewidth]{Fig/cnn_kodak23_zoom_original.jpg} &
+        \includegraphics[width=0.40\linewidth]{Fig/cnn_kodak23_zoom_base.jpg}\\
+        \small Original & \small CNN base Figura 3\\[0.35cm]
+        \includegraphics[width=0.40\linewidth]{Fig/cnn_kodak23_zoom_32.jpg} &
+        \includegraphics[width=0.40\linewidth]{Fig/cnn_kodak23_zoom_residuales.jpg}\\
+        \small CNN 32 canales & \small CNN 32 + residuales
+    \end{tabular}
+    \caption{Zoom de la cara del primer loro verde en Kodak 23 para la comparación entre las tres CNN.}
+    \label{fig:cnn-variants-zoom}
 \end{figure}
+\reportfigure{Fig/siren_kodak23_zoom.jpg}{Reconstrucción SIREN sobre Kodak 23 y zoom de la cara del loro verde.}{fig:siren-zoom}
+\reportfigure{Fig/cnn_entrenamiento_curvas.jpg}{Evolución de la pérdida MSE durante el entrenamiento de las CNN.}{fig:cnn-training-results}
+
+\subsection{Reconstrucción de todas las imágenes}
+
+La última sección de cada notebook genera una galería para las cuatro imágenes Kodak de prueba. En CNN se muestran las originales junto con la mejor CNN seleccionada por PSNR. En SIREN se muestra la reconstrucción específica de cada imagen y se identifica la mejor según el promedio de PSNR de las cuatro representaciones.
+
+Esta presentación permite separar dos preguntas. La primera es cuál método obtiene la mejor métrica promedio. La segunda es cómo se comporta visualmente el método sobre escenas particulares. Una única imagen puede favorecer a un modelo debido a su contenido, por lo que la galería completa es necesaria para evaluar consistencia.
+
+\reportfigure{Fig/cnn_kodak21_24_mejor.jpg}{Imágenes Kodak de prueba originales y reconstrucciones de la mejor CNN, CNN de 32 canales, seleccionada por PSNR promedio.}{fig:cnn-gallery}
+\reportfigure{Fig/cnn_todas_variantes_kodak21_24.jpg}{Comparación de la CNN base, la CNN de 32 canales y la variante con residuales en las cuatro imágenes Kodak de prueba.}{fig:cnn-gallery-variants}
+\reportfigure{Fig/siren_todas_las_imagenes.jpg}{Imágenes Kodak de prueba originales y reconstrucciones SIREN ajustadas individualmente.}{fig:siren-gallery}
+
+\subsection{Comparación directa CNN--SIREN}
+
+La comparación entre ambas redes debe interpretarse considerando que resuelven tareas de aprendizaje distintas. La CNN se entrena una sola vez con las 20 imágenes Kodak de entrenamiento y después se aplica a las cuatro imágenes no vistas. SIREN se entrena cuatro veces, una vez para cada imagen de prueba. Por lo tanto, el costo de entrenamiento y la capacidad de generalización no son equivalentes.
+
+\begin{table}[H]
+\centering
+\caption{Comparación conceptual y cuantitativa entre CNN y SIREN.}
+\label{tab:cnn-siren}
+\scriptsize
+\begin{tabular}{p{3.4cm}p{5.1cm}p{5.1cm}}
+\toprule
+Característica & CNN & SIREN\\
+\midrule
+Entrada & Bayer empaquetado $H/2\times W/2\times4$ & Coordenadas $(x,y)$\\
+Salida & Imagen RGB completa & RGB en cada coordenada\\
+Objetivo de entrenamiento & RGB Kodak supervisado & Consistencia con Bayer observado\\
+Número de modelos & Un modelo compartido más variantes & Un modelo por imagen\\
+Parámetros base & 14,967 & 198,915\\
+Generalización & Sí, sobre imágenes no vistas & No directa; requiere reajuste\\
+Imagen de comparación & Kodak 23 & Kodak 23\\
+Recorte de comparación & $(60,165,300,365)$ & $(60,165,300,365)$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La comparación numérica considera el PSNR promedio de las cuatro imágenes y, por separado, el resultado de Kodak 23. No es suficiente comparar únicamente la pérdida de entrenamiento: en CNN la métrica importante es la generalización, mientras que en SIREN la métrica refleja el ajuste de una representación específica.
+
+\begin{table}[H]
+\centering
+\caption{Comparación numérica en la imagen Kodak 23, usando la misma medición Bayer y la misma referencia RGB.}
+\label{tab:cnn-siren-kodak23}
+\scriptsize
+\begin{tabular}{p{6.0cm}rrrr}
+\toprule
+Método & Parámetros & MSE & PSNR [dB] & SSIM\\
+\midrule
+Bilineal OpenCV & 0 & 0.0586 & 12.3206 & 0.7781\\
+CNN base Figura 3 & 14\,967 & 0.0052 & 22.8198 & 0.8363\\
+CNN 32 canales & 57\,383 & 0.0015 & 28.2902 & 0.8568\\
+CNN 32 + residuales & 131\,367 & 0.0068 & 21.6809 & 0.8062\\
+SIREN imagen 23 & 198\,915 & 0.0013 & \textbf{28.7843} & \textbf{0.8579}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Figura~\ref{fig:cnn-variants-zoom} y la Figura~\ref{fig:siren-zoom} muestran el detalle visual correspondiente. En CNN 32 canales se observa la mejor métrica promedio y, en Kodak 23, la SIREN supera a esta CNN en aproximadamente $0.49$ dB de PSNR. Esta diferencia debe interpretarse con cuidado: CNN es un modelo compartido entrenado con 20 imágenes, mientras que SIREN se optimiza específicamente con la medición de Kodak 23.
 
 \section{Análisis}
 
-La pérdida de entrenamiento de la CNN principal disminuyó de 0.038695 a 0.006798 durante seis épocas. Esto indica que la red pudo aprender la relación entre el mosaico Bayer y la imagen RGB objetivo. Sin embargo, la diferencia entre el desempeño de entrenamiento y el resultado de prueba muestra que todavía existen dificultades de generalización hacia imágenes no vistas. El conjunto de entrenamiento es pequeño y las imágenes utilizadas para formar los parches tienen una distribución limitada.
+CNN y SIREN resuelven el mismo problema de reconstrucción, pero representan aprendizajes diferentes. La CNN aprende una transformación compartida desde muchas imágenes Kodak. Por ello, una vez entrenada, puede procesar una imagen nueva sin optimizar nuevamente sus parámetros. SIREN se ajusta a la medición de cada imagen y puede representar con precisión esa escena, pero debe volver a entrenarse para otra captura.
 
-La INR-SIREN fue superior en la prueba controlada, pero la comparación no es completamente equivalente a la de la CNN: la INR se ajusta directamente a la imagen de evaluación, mientras que la CNN busca aprender una regla general a partir de varias imágenes. En consecuencia, la INR funciona como un ajuste específico de captura y la CNN como un modelo reutilizable. La alta calidad de la INR no implica necesariamente una mejor capacidad de generalización.
+La CNN base de la Figura 3 tiene una capacidad deliberadamente acotada: 16 canales y 14.967 parámetros. La variante de 32 canales posee más filtros para modelar texturas y transiciones cromáticas; la variante residual agrega caminos de refinamiento en el cuello de botella. Si las variantes mejoran PSNR o SSIM en las cuatro imágenes de prueba, la evidencia favorece una mayor capacidad. Si mejoran entrenamiento pero no prueba, el aumento de capacidad puede estar produciendo sobreajuste.
 
-El resultado de OpenCV fue peor que el de la interpolación bilineal, tanto en la prueba controlada como en Kodak. Dado que OpenCV normalmente constituye una línea base competitiva, esta diferencia debe interpretarse como un resultado de la implementación concreta y no como una conclusión general sobre OpenCV. Es necesario verificar cuidadosamente la correspondencia entre el patrón \texttt{GRBG}, las convenciones BGR/RGB y la escala de los datos de entrada. Una inversión de canales o una codificación Bayer incorrecta puede aumentar considerablemente el error.
+La pérdida de SIREN utiliza únicamente los valores observados por el sensor. Este criterio es físicamente correcto, pero el problema sigue siendo subdeterminado: muchos RGB distintos pueden producir la misma medición Bayer. La arquitectura, la inicialización sinusoidal y el sesgo de suavidad inducido por la optimización determinan qué solución se obtiene para los canales no observados.
 
-Para la captura real, el JPG corresponde al resultado del pipeline incorporado de la cámara, mientras que \texttt{rawpy} proporciona un revelado independiente. Ambos incluyen decisiones de balance de blancos, color y tono que no están presentes en el mosaico RAW. Por ello, la comparación del DNG se realizó de forma cualitativa después de aplicar corrección de color y gamma sRGB, y no se utilizaron métricas contra el JPG como si este fuera una verdad de terreno lineal.
+La comparación con OpenCV sirve como referencia práctica, pero debe mantener exactamente el patrón \texttt{GRBG}, el orden RGB y la normalización $[0,1]$. Una permutación BGR/RGB puede cambiar significativamente las métricas y producir una interpretación incorrecta.
 
 \section{Conclusiones}
 
-Se implementó un flujo completo de demosaicking desde una captura DNG real y desde mosaicos sintéticos. El trabajo incluyó una línea base bilineal, OpenCV, una representación neuronal implícita y una CNN encoder--decoder inspirada en la arquitectura de la Figura 3. También se entrenó una variante mejorada con más canales y bloques residuales.
+Se construyó un flujo reproducible para estudiar demosaicking neuronal con dos notebooks separados. La CNN se entrenó con 480 parches provenientes de 20 imágenes Kodak y se evaluó sobre 96 parches de cuatro imágenes no vistas. La SIREN se ajusta por imagen mediante 1000 pasos de optimización física.
 
-En la prueba controlada, la INR-SIREN obtuvo el mejor desempeño, con PSNR de 41.0670 dB y SSIM de 0.9791. Este resultado se explica por su optimización específica para la captura. En las imágenes Kodak no vistas, la interpolación bilineal fue el método más preciso de los evaluados, con PSNR de 33.4489 dB y SSIM de 0.9060. La CNN base alcanzó PSNR de 23.8272 dB y SSIM de 0.7329, por lo que aún requiere más entrenamiento, datos o ajustes para superar la línea base.
+La arquitectura CNN base coincide con la Figura 3 y contiene 14.967 parámetros entrenables. Las variaciones de 32 canales y de bloques residuales permiten estudiar el efecto de aumentar la capacidad sin cambiar el dataset ni el protocolo de evaluación.
 
-La modificación de la arquitectura fue positiva: la CNN mejorada redujo el MSE de prueba en aproximadamente 34\% respecto de la CNN Figura 3. La pérdida de consistencia física aportó una mejora marginal en esta corrida. Esto muestra que aumentar la capacidad de representación ayudó más que modificar solamente el término físico de la función de pérdida.
+La comparación visual se estandarizó sobre Kodak 23 y sobre la región $(60,165,300,365)$, que corresponde a la cara del primer loro verde. Esta decisión permite comparar directamente la CNN y SIREN en una zona con bordes, textura y cambios de color relevantes.
 
-Finalmente, los resultados sobre el DNG real fueron revelados mediante \texttt{rawpy} y las reconstrucciones fueron transformadas a un espacio de color visualizable mediante una matriz de corrección de color y gamma sRGB. La comparación con el JPG del teléfono es útil para inspección cualitativa, pero no debe interpretarse como una métrica objetiva porque el JPG ya incluye procesamiento interno de la cámara.
+Los valores finales de MSE, PSNR y SSIM deben tomarse de las tablas generadas por la última ejecución de cada notebook. Esta precaución es necesaria porque las métricas dependen del número de pasos, épocas, semilla, dispositivo y versión de las librerías utilizadas.
 
-\section*{Archivos entregados}
+\section{Material complementario}
 
-El informe se acompaña de los archivos \texttt{homework2.ipynb} y \texttt{Demosaicked-colorCorrection.py}. El notebook contiene el código de descarga de datos, lectura del DNG, generación de mosaicos, entrenamiento de la CNN, entrenamiento de la INR, evaluación de métricas, variantes de arquitectura, corrección de color y visualización de resultados.
+El código utilizado se encuentra en:
+
+\begin{itemize}
+    \item \texttt{tareas/tarea-02/cnnDemosaicing.ipynb};
+    \item \texttt{tareas/tarea-02/demosaickingSiren.ipynb}.
+\end{itemize}
+
+Ambos notebooks contienen la descarga o respaldo local del dataset Kodak, el muestreo Bayer, el entrenamiento, las métricas, el zoom común y la galería completa de reconstrucciones.
 
 \begin{thebibliography}{9}
 
@@ -300,9 +695,6 @@ V. Sitzmann et al. Implicit neural representations with periodic activation func
 
 \bibitem{opencv}
 OpenCV. \textit{Color conversions and Bayer demosaicing}. Documentación oficial. Disponible en: \url{https://docs.opencv.org/}.
-
-\bibitem{rawpy}
-RawPy. \textit{LibRaw wrapper for Python}. Documentación del proyecto. Disponible en: \url{https://github.com/letmaik/rawpy}.
 
 \end{thebibliography}
 

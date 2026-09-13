@@ -1,280 +1,598 @@
-%-------------------------------------------------------------------------
-% PACKAGES AND DOCUMENT CONFIGURATIONS
-%-------------------------------------------------------------------------
+\documentclass[11pt,a4paper]{article}
 
-\documentclass[dvipsnames,cmyk]{article}
-\usepackage[a4paper, total={7in, 10in}]{geometry}
-\usepackage{graphicx}
-\usepackage{natbib}
-\usepackage{amsmath}
-\usepackage[spanish]{babel}
+% -----------------------------------------------------------------------------
+% Configuración
+% -----------------------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage[utf8]{inputenc}
-\usepackage{courier}
-\usepackage{color}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{pdflscape}
 \usepackage{listings}
+\usepackage[dvipsnames]{xcolor}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{microtype}
 \usepackage{hyperref}
-\usepackage{booktabs}
+\usepackage{needspace}
 
-\setlength\parindent{0pt}
-\renewcommand{\lstlistingname}{Algoritmo}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=MidnightBlue,
+    citecolor=MidnightBlue,
+    urlcolor=MidnightBlue,
+    pdftitle={Demosaicking con filtro Bayer},
+    pdfauthor={Francisco Alfaro Medina}
+}
 
-\usepackage{listings,xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.15}
+\captionsetup{font=small,labelfont=bf}
 
+\definecolor{codebg}{RGB}{247,248,250}
+\definecolor{codecomment}{RGB}{40,120,65}
 \lstset{
-    breaklines=true,
-    tabsize=3,
-    showstringspaces=false
-}
-
-\lstdefinestyle{Common}{
-    extendedchars=\true,
-    language={python},
+    language=Python,
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{MidnightBlue},
+    commentstyle=\color{codecomment},
+    stringstyle=\color{BrickRed},
     frame=single,
-    framesep=3pt,
-    framerule=0.4pt,
-    xleftmargin=3.4pt,
-    xrightmargin=3.4pt,
-    rulecolor=\color{Red}
+    rulecolor=\color{gray!45},
+    breaklines=true,
+    showstringspaces=false,
+    columns=fullflexible
 }
 
-\lstdefinestyle{A}{
-    style=Common,
-    backgroundcolor=\color{Yellow!10},
-    basicstyle=\scriptsize\color{Black}\ttfamily,
-    keywordstyle=\color{Orange},
-    identifierstyle=\color{Cyan},
-    stringstyle=\color{Red},
-    commentstyle=\color{Green}
-}
-
-\lstdefinestyle{B}{
-    style=Common,
-    backgroundcolor=\color{Black},
-    basicstyle=\scriptsize\color{White}\ttfamily,
-    keywordstyle=\color{Orange},
-    identifierstyle=\color{Cyan},
-    stringstyle=\color{Red},
-    commentstyle=\color{Green}
-}
-
-%-------------------------------------------------------------------------
-% DOCUMENT INFORMATION
-%-------------------------------------------------------------------------
-
-\newcommand{\horrule}[1]{\rule{\linewidth}{#1}}
+\newcommand{\bilinear}{\textsc{Bilineal}}
+\newcommand{\malvar}{\textsc{Malvar2004}}
 
 \title{
-    \includegraphics[width=7cm]{Fig/usm.png}
-
-    \normalfont \normalsize
-    \sffamily Universidad Técnica Federico Santa María, Departamento de Informática \\ [20pt]
-    \horrule{0.5pt} \\[0.4cm]
-    \huge \textbf{\sffamily Informe Tarea 1: Arreglo de Filtros Bayer e Interpolación}
-    \horrule{2pt} \\[0.5cm]
+    \includegraphics[width=5.7cm]{Fig/usm.png}\\[0.35cm]
+    \large Universidad Técnica Federico Santa María\\
+    Departamento de Informática\\[0.35cm]
+    \rule{\linewidth}{0.5pt}\\[0.25cm]
+    \LARGE\textbf{Demosaicking de imágenes RGB\\
+    mediante un arreglo de filtros Bayer}\\[-0.05cm]
+    \rule{\linewidth}{1.5pt}
 }
-
-\author{\sffamily Francisco Alfaro Medina, francisco.alfaro@usm.cl}
-
-\date{\normalsize \sffamily 19 de Agosto de 2026}
+\author{\large Francisco Alfaro Medina\\
+\href{mailto:francisco.alfaro@usm.cl}{francisco.alfaro@usm.cl}}
+\date{19 de agosto de 2026}
 
 \begin{document}
-
 \maketitle
+\thispagestyle{empty}
 
-\section{\sffamily Resumen}
+\begin{abstract}
+Este informe estudia el problema de reconstruir una imagen RGB a partir de una única medición por píxel producida por un arreglo de filtros Bayer. Se implementa el patrón RGGB, se simula la adquisición sobre las 24 imágenes del dataset Kodak y se comparan dos métodos de demosaicking: interpolación bilineal bidimensional y el método de interpolación lineal de Malvar, He y Cutler (2004). La evaluación se realiza con PSNR, SSIM y SAM, calculadas directamente sobre imágenes normalizadas al intervalo $[0,1]$. La interpolación bilineal alcanza promedios de $29.4849$ dB, $0.8917$ y $2.4072^\circ$ para PSNR, SSIM y SAM, respectivamente. \malvar{} mejora los tres indicadores: $34.6940$ dB, $0.9681$ y $1.7049^\circ$. La ganancia es consistente en las 24 imágenes, lo que confirma que las correcciones de gradiente y la ventana espacial $5\times5$ permiten reducir falso color y preservar mejor bordes y estructura.
+\end{abstract}
 
-En este informe se implementa un sistema básico de fotografía computacional para simular la captura de imágenes RGB mediante un arreglo de filtros Bayer. A partir de cada imagen original se genera un mosaico Bayer con patrón RGGB y luego se reconstruye la imagen de color mediante demosaicking. El método principal usa interpolación bilineal 2D mediante filtros de convolución aplicados por canal, y como bonus se implementa el algoritmo lineal de Malvar, He y Cutler \cite{malvar2004high}. La evaluación se realiza sobre las 24 imágenes del dataset Kodak, usando PSNR, SSIM y SAM como métricas de calidad.
+\tableofcontents
+\newpage
 
-\section{\sffamily Introducción}
+\section{Objetivos y alcance}
 
-Las cámaras digitales de color suelen usar un arreglo de filtros de color sobre el sensor. En vez de medir simultáneamente los tres canales RGB en cada píxel, cada posición registra solo una componente de color. El arreglo Bayer \cite{bayer1976color} asigna muestras rojas, verdes y azules siguiendo un patrón periódico; en este trabajo se usa el patrón RGGB:
+El objetivo es implementar y analizar un sistema de fotografía computacional en color que reproduzca dos etapas de una cámara con sensor de una sola medición por píxel:
 
-\[
-\begin{bmatrix}
-R & G \\
-G & B
-\end{bmatrix}.
-\]
-
-Si $I(i,j) = (R(i,j),G(i,j),B(i,j))$ representa la imagen RGB original, el filtro Bayer se define mediante un bloque base $B \in \{0,1\}^{2 \times 2 \times 3}$:
-
-\[
-B_0 =
-\begin{bmatrix}
-1 & 0 \\
-0 & 0
-\end{bmatrix},
-\quad
-B_1 =
-\begin{bmatrix}
-0 & 1 \\
-1 & 0
-\end{bmatrix},
-\quad
-B_2 =
-\begin{bmatrix}
-0 & 0 \\
-0 & 1
-\end{bmatrix}.
-\]
-
-Luego, cada máscara completa se obtiene replicando este bloque con producto de Kronecker:
-
-\[
-T_c = \mathbf{1}_{M/2 \times N/2} \otimes B_c, \quad c \in \{0,1,2\}.
-\]
-
-Con estas máscaras, el mosaico observado $Y$ se obtiene como:
-
-\[
-Y = \sum_{c=0}^{C-1} T_c \odot I_c,
-\]
-
-donde $T_0$, $T_1$ y $T_2$ son las máscaras binarias asociadas a los canales rojo, verde y azul. El objetivo del demosaicking es estimar la imagen RGB completa $\hat{I}$ desde este mosaico incompleto.
-
-La reconstrucción se evaluó con tres métricas. PSNR mide el error cuadrático medio en escala logarítmica; SSIM mide similitud estructural considerando luminancia, contraste y estructura; SAM mide el ángulo promedio entre los vectores RGB original y reconstruido en cada píxel.
-
-\section{\sffamily Experimentos}
-
-Se usó el dataset Kodak \cite{kodakdataset}, compuesto por 24 imágenes RGB. Para cada imagen se aplicó el siguiente flujo experimental:
-
-\begin{enumerate}
-    \item cargar la imagen RGB y normalizarla al rango $[0,1]$;
-    \item generar el mosaico Bayer con patrón RGGB;
-    \item reconstruir la imagen mediante interpolación bilineal 2D por canal;
-    \item calcular PSNR, SSIM y SAM entre la imagen original y la reconstruida;
-    \item repetir el proceso con el algoritmo de Malvar2004 para comparar resultados.
+\begin{enumerate}[label=\arabic*.]
+    \item muestreo de una imagen RGB mediante un arreglo de filtros Bayer;
+    \item reconstrucción de los canales faltantes mediante demosaicking;
+    \item evaluación cuantitativa y cualitativa sobre el dataset Kodak;
+    \item comparación entre un método local de referencia y un método lineal con correcciones de gradiente.
 \end{enumerate}
 
-La figura \ref{fig:bayer_bilineal} muestra un ejemplo cualitativo del proceso usando la imagen 01 del dataset Kodak.
+El análisis se basa en el notebook \texttt{tareas/tarea-01/homework1.ipynb}. Todas las imágenes se cargan como RGB, se convierten a tipo flotante y se normalizan al intervalo $[0,1]$. El patrón Bayer empleado en todo el experimento es RGGB.
 
-\begin{figure}[!h]
+\section{Fundamento matemático}
+
+\subsection{Muestreo Bayer y modelo de medición}
+
+Sea $I\in[0,1]^{H\times W\times 3}$ una imagen RGB, donde $I_c(i,j)$ representa el canal $c\in\{R,G,B\}$ en la posición $(i,j)$. El arreglo Bayer, propuesto originalmente para captura de color \cite{bayer1976color}, no mide los tres canales en cada posición: mide rojo, verde o azul según la periodicidad espacial
+
+\begin{equation}
+    \begin{bmatrix}
+        R & G\\
+        G & B
+    \end{bmatrix}.
+    \label{eq:rggb}
+\end{equation}
+
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\linewidth]{Fig/kodak01_bayer_bicubica.png}
-    \caption{Imagen original, mosaico Bayer RGGB, reconstrucción bilineal y error absoluto amplificado.}
-    \label{fig:bayer_bilineal}
+    \includegraphics[width=0.92\linewidth]{Fig/fig1.png}
+    \caption{Representación conceptual de un arreglo de filtros Bayer y sus tres componentes espectrales.}
+    \label{fig:bayer}
 \end{figure}
 
-\subsection{\sffamily Interpolación bilineal 2D}
+El bloque binario $B\in\{0,1\}^{2\times2\times3}$ utilizado por el notebook está compuesto por
 
-La interpolación bilineal se aplicó de forma independiente a cada canal usando filtros 2D. Primero se separan las muestras observadas del mosaico mediante
+\begin{equation}
+ B_R=\begin{bmatrix}1&0\\0&0\end{bmatrix},\qquad
+ B_G=\begin{bmatrix}0&1\\1&0\end{bmatrix},\qquad
+ B_B=\begin{bmatrix}0&0\\0&1\end{bmatrix}.
+ \label{eq:bloque-bayer}
+\end{equation}
 
-\[
-\bar{I}_c = T_c \odot Y.
-\]
+Para una imagen de dimensiones pares, cada máscara de tamaño completo se construye mediante un producto de Kronecker:
 
-Luego, cada canal incompleto se reconstruye aplicando un filtro local:
+\begin{equation}
+    T_c=\mathbf{1}_{H/2\times W/2}\otimes B_c,
+    \qquad c\in\{R,G,B\}.
+    \label{eq:kronecker}
+\end{equation}
 
-\[
-\hat{I}_c = \frac{1}{4}(\bar{I}_c * H_c).
-\]
+El modelo de medición escalar es
 
-Para los canales rojo y azul se usa
+\begin{equation}
+    Y(i,j)=\sum_{c\in\{R,G,B\}}T_c(i,j)I_c(i,j),
+    \label{eq:medicion}
+\end{equation}
 
-\[
-H_{R,B} =
-\begin{bmatrix}
-1 & 2 & 1 \\
-2 & 4 & 2 \\
-1 & 2 & 1
-\end{bmatrix},
-\]
+donde $Y\in[0,1]^{H\times W}$ es el mosaico Bayer. Puesto que cada píxel aporta una sola componente espectral, la recuperación de $I$ desde $Y$ es un problema subdeterminado. El demosaicking incorpora supuestos de regularidad espacial y correlación entre canales para estimar los valores no observados.
 
-mientras que para el canal verde se usa
+La transición desde la imagen RGB hasta la medición escalar se ilustra en la Figura~\ref{fig:original-measurement}. La imagen de la derecha no contiene tres canales de color por píxel: cada posición conserva únicamente la intensidad correspondiente al filtro rojo, verde o azul que ocupa esa posición del patrón RGGB.
 
-\[
-H_G =
-\begin{bmatrix}
-0 & 1 & 0 \\
-1 & 4 & 1 \\
-0 & 1 & 0
-\end{bmatrix}.
-\]
-
-Este método es simple y eficiente, pero al usar filtros fijos puede generar artefactos visibles, especialmente falso color o franjas tipo arcoíris en zonas con bordes y texturas finas.
-
-\begin{lstlisting}[style=B,caption=Funciones principales para generar el mosaico Bayer y reconstruir por interpolación bilineal.,label={lst:bilineal}]
-def rgb_to_bayer_mosaic(image_rgb, pattern="RGGB"):
-    T = bayer_tensor(image_rgb.shape, pattern=pattern)
-    Y = np.zeros(image_rgb.shape[:2], dtype=image_rgb.dtype)
-    for c in range(T.shape[-1]):
-        Y = Y + T[:, :, c] * image_rgb[:, :, c]
-    return Y
-
-def demosaick_interpolation(mosaic, pattern="RGGB", method="bilinear"):
-    M, N = mosaic.shape
-    C = 3
-    T = bayer_tensor(mosaic.shape, pattern=pattern)
-    It = np.zeros((M, N, C), float)
-    Ir = np.zeros((M, N, C), float)
-
-    kernel = np.zeros((3, 3, C))
-    kernel[:, :, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
-    kernel[:, :, 1] = np.array([[0, 1, 0], [1, 4, 1], [0, 1, 0]])
-    kernel[:, :, 2] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
-
-    for c in range(C):
-        It[:, :, c] = T[:, :, c] * mosaic
-        Ir[:, :, c] = correlate(It[:, :, c], kernel[:, :, c], mode="mirror") / 4
-
-    return np.clip(Ir, 0.0, 1.0)
-\end{lstlisting}
-
-\subsection{\sffamily Bonus: Malvar, He y Cutler 2004}
-
-Además se implementó el algoritmo de Malvar, He y Cutler \cite{malvar2004high}, el cual usa filtros lineales $5 \times 5$ diseñados para reconstruir los canales faltantes en el patrón Bayer. A diferencia de la interpolación bilineal con filtros $3 \times 3$, este método incorpora correcciones de gradiente y aprovecha mejor la correlación local entre canales, lo que reduce artefactos en bordes, texturas y cambios abruptos de intensidad.
-
-La figura \ref{fig:comparacion_metodos} compara visualmente la reconstrucción bilineal y Malvar2004 para la imagen 01.
-
-\begin{figure}[!h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\linewidth]{Fig/kodak01_comparacion_metodos.png}
-    \caption{Comparación visual entre imagen original, reconstrucción bilineal y reconstrucción con Malvar2004.}
-    \label{fig:comparacion_metodos}
+    \includegraphics[width=\linewidth]{Fig/kodak01_original_measurement.png}
+    \caption{Imagen Kodak 01 antes del muestreo y medición escalar obtenida con el mosaico Bayer RGGB.}
+    \label{fig:original-measurement}
 \end{figure}
 
-\subsection{\sffamily Resultados cuantitativos}
+\subsection{Interpolación bilineal bidimensional}
 
-La tabla \ref{tab:resumen_metricas} resume los resultados sobre las 24 imágenes Kodak. En PSNR y SSIM un valor mayor indica mejor reconstrucción, mientras que en SAM un valor menor indica mayor similitud espectral.
+La primera etapa del algoritmo separa las muestras de cada canal:
 
-\begin{table}[!h]
-    \centering
-    \caption{Promedio y desviación estándar de las métricas sobre el dataset Kodak.}
-    \label{tab:resumen_metricas}
-    \begin{tabular}{lrrrrrr}
-        \toprule
-        Método & PSNR prom. & PSNR std. & SSIM prom. & SSIM std. & SAM prom. & SAM std. \\
-        \midrule
-        Bilineal & 29.4849 & 2.8141 & 0.8917 & 0.0399 & 2.4072 & 1.0290 \\
-        Malvar2004 & 34.6940 & 2.5837 & 0.9681 & 0.0082 & 1.7049 & 0.6901 \\
-        \bottomrule
-    \end{tabular}
+\begin{equation}
+    \bar I_c=T_c\odot Y.
+    \label{eq:canal-incompleto}
+\end{equation}
+
+El notebook aplica una correlación local con modo de borde \texttt{mirror} y divide por cuatro:
+
+\begin{equation}
+    \widehat I_c=\operatorname{clip}\left[
+    \frac{1}{4}\,\operatorname{corr}(\bar I_c,H_c),0,1\right].
+    \label{eq:bilinear-general}
+\end{equation}
+
+Los filtros utilizados son
+
+\begin{equation}
+ H_R=H_B=\begin{bmatrix}
+ 1&2&1\\2&4&2\\1&2&1
+ \end{bmatrix},\qquad
+ H_G=\begin{bmatrix}
+ 0&1&0\\1&4&1\\0&1&0
+ \end{bmatrix}.
+ \label{eq:filtros-bilineales}
+\end{equation}
+
+El peso central conserva una muestra ya observada, mientras que los pesos vecinos estiman los valores faltantes. El método es simple y eficiente, pero no distingue la orientación de los bordes ni utiliza explícitamente la correlación cromática. Como consecuencia, en regiones de alta frecuencia puede suavizar contornos o generar falso color, visible como franjas azuladas y rojizas alrededor de líneas estructurales.
+
+\subsection{Interpolación lineal de Malvar, He y Cutler}
+
+El método \malvar{} \cite{malvar2004high} extiende la interpolación lineal a una ventana $5\times5$. La idea es conservar el comportamiento de una interpolación básica y agregar correcciones relacionadas con diferencias entre canales y gradientes locales. En la implementación se mantienen sin modificación las muestras Bayer observadas y se estiman solamente las posiciones faltantes.
+
+Por ejemplo, el filtro usado para estimar el verde en posiciones rojas o azules es
+
+\begin{equation}
+ K_{G|RB}=\frac{1}{8}
+ \begin{bmatrix}
+ 0&0&-1&0&0\\
+ 0&0&2&0&0\\
+ -1&2&4&2&-1\\
+ 0&0&2&0&0\\
+ 0&0&-1&0&0
+ \end{bmatrix}.
+ \label{eq:malvar-green}
+\end{equation}
+
+Para estimar rojo o azul en posiciones verdes se emplean dos orientaciones del filtro:
+
+\begin{equation}
+ K_{RB|G}^{(1)}=\frac{1}{8}
+ \begin{bmatrix}
+ 0&0&0.5&0&0\\
+ 0&-1&0&-1&0\\
+ -1&4&5&4&-1\\
+ 0&-1&0&-1&0\\
+ 0&0&0.5&0&0
+ \end{bmatrix},
+ \qquad K_{RB|G}^{(2)}=\left(K_{RB|G}^{(1)}\right)^\mathsf{T}.
+ \label{eq:malvar-green-rb}
+\end{equation}
+
+Finalmente, el filtro para transferir información entre posiciones rojas y azules es
+
+\begin{equation}
+ K_{RB|BR}=\frac{1}{8}
+ \begin{bmatrix}
+ 0&0&-1.5&0&0\\
+ 0&2&0&2&0\\
+ -1.5&0&6&0&-1.5\\
+ 0&2&0&2&0\\
+ 0&0&-1.5&0&0
+ \end{bmatrix}.
+ \label{eq:malvar-br}
+\end{equation}
+
+Los coeficientes negativos permiten corregir discrepancias locales que la interpolación bilineal no puede detectar. Esto explica que \malvar{} sea especialmente útil cerca de bordes, ventanas, ladrillos y texturas finas: allí los canales presentan gradientes correlacionados, pero no idénticos.
+
+\section{Métricas de evaluación}
+
+Las métricas se calculan comparando la referencia $I$ con la reconstrucción $\widehat I$, ambas recortadas al intervalo $[0,1]$. Cada métrica enfatiza un aspecto diferente de la calidad.
+
+\subsection{MSE y PSNR}
+
+El error cuadrático medio implementado es
+
+\begin{equation}
+ \operatorname{MSE}=\frac{1}{3HW}
+ \sum_{i=1}^{H}\sum_{j=1}^{W}\sum_{c=1}^{3}
+ \left(I(i,j,c)-\widehat I(i,j,c)\right)^2.
+ \label{eq:mse}
+\end{equation}
+
+El PSNR se define como
+
+\begin{equation}
+ \operatorname{PSNR}=10\log_{10}\left(\frac{L^2}{\operatorname{MSE}}\right),
+ \qquad L=1.
+ \label{eq:psnr}
+\end{equation}
+
+Por tanto, en este trabajo $\operatorname{PSNR}=10\log_{10}(1/\operatorname{MSE})$. Es una métrica logarítmica: una diferencia de aproximadamente $3$ dB corresponde a reducir el MSE cerca de la mitad, manteniendo fija la normalización.
+
+\subsection{SSIM}
+
+Para cada canal se calculan estadísticas locales usando una ventana cuadrada de tamaño $7\times7$. El índice implementado es
+
+\begin{equation}
+ \operatorname{SSIM}(x,y)=
+ \frac{(2\mu_x\mu_y+C_1)(2\sigma_{xy}+C_2)}
+ {(\mu_x^2+\mu_y^2+C_1)(\sigma_x^2+\sigma_y^2+C_2)},
+ \label{eq:ssim}
+\end{equation}
+
+con
+
+\begin{equation}
+ C_1=(0.01L)^2=10^{-4},\qquad C_2=(0.03L)^2=9\times10^{-4}.
+ \label{eq:ssim-constants}
+\end{equation}
+
+El resultado final es el promedio de los mapas SSIM de los tres canales. SSIM evalúa luminancia, contraste y estructura; por eso complementa al PSNR, que solo mide discrepancia cuadrática de píxeles.
+
+\subsection{SAM}
+
+Para cada píxel se interpretan los valores RGB como vectores en $\mathbb{R}^3$:
+
+\begin{equation}
+ \mathbf v(i,j)=\begin{bmatrix}R&G&B\end{bmatrix}^{\mathsf T},\qquad
+ \widehat{\mathbf v}(i,j)=\begin{bmatrix}\widehat R&\widehat G&\widehat B\end{bmatrix}^{\mathsf T}.
+\end{equation}
+
+El ángulo espectral promedio es
+
+\begin{equation}
+ \operatorname{SAM}=\frac{1}{HW}\sum_{i,j}
+ \arccos\left(
+ \frac{\mathbf v(i,j)^{\mathsf T}\widehat{\mathbf v}(i,j)}
+ {\|\mathbf v(i,j)\|_2\|\widehat{\mathbf v}(i,j)\|_2+\varepsilon}
+ \right),
+ \label{eq:sam}
+\end{equation}
+
+con $\varepsilon=10^{-12}$ para evitar divisiones por cero. El notebook convierte el promedio final a grados. SAM es sensible a la dirección del vector RGB, por lo que una menor magnitud no necesariamente implica un gran error cromático si la dirección se conserva.
+
+\subsection{Rangos orientativos}
+
+Los umbrales no son universales: dependen del contenido, resolución, ruido y tarea. Para este experimento, con imágenes normalizadas, se utiliza la siguiente guía interpretativa.
+
+\begin{table}[H]
+\centering
+\caption{Rangos orientativos para interpretar las métricas en este experimento.}
+\label{tab:rangos}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.2cm}p{2.8cm}p{2.8cm}p{2.8cm}p{2.2cm}}
+\toprule
+Métrica & Bajo o malo & Intermedio & Bueno & Mejor valor \\
+\midrule
+PSNR (dB) & $<20$ & $20$--$30$ & $\geq30$ & $\infty$ \\
+SSIM & $<0.70$ & $0.70$--$0.85$ & $\geq0.85$ & $1$ \\
+SAM (grados) & $>5$ & $2$--$5$ & $<2$ & $0^\circ$ \\
+\bottomrule
+\end{tabular}
 \end{table}
 
-\begin{figure}[!h]
+En PSNR y SSIM, un valor mayor es mejor. En SAM, un valor menor es mejor. Estos rangos se emplean como referencia descriptiva y no sustituyen la comparación entre métodos bajo el mismo dataset y protocolo.
+
+\section{Protocolo experimental}
+
+\subsection{Dataset y preprocesamiento}
+
+Se utiliza el Kodak Lossless True Color Image Suite \cite{kodakdataset}, compuesto por 24 imágenes RGB de tamaño $512\times768\times3$. Para cada imagen se ejecuta el siguiente protocolo:
+
+\begin{enumerate}[label=\arabic*.]
+    \item cargar la imagen y convertirla a RGB;
+    \item convertir los valores enteros de 8 bits mediante $I\leftarrow I/255$;
+    \item construir las máscaras RGGB con el producto de Kronecker;
+    \item formar el mosaico escalar $Y$ según la ecuación~\eqref{eq:medicion};
+    \item reconstruir con \bilinear{} y con \malvar{};
+    \item calcular PSNR, SSIM y SAM contra la imagen original;
+    \item reportar resultados por imagen, promedio y desviación estándar.
+\end{enumerate}
+
+No se realiza entrenamiento, ajuste de parámetros con las imágenes de prueba ni postprocesamiento adicional. Ambos métodos reciben exactamente el mismo mosaico y se evalúan con las mismas funciones de métrica. En las convoluciones se usa reflexión especular en los bordes, y las salidas se recortan a $[0,1]$.
+
+La Figura~\ref{fig:dataset} resume visualmente parte del conjunto de imágenes utilizado. La evaluación numérica, sin embargo, se ejecuta sobre las 24 imágenes y no solamente sobre las muestras mostradas en la figura.
+
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\linewidth]{Fig/comparacion_metricas.png}
-    \caption{Comparación de métricas promedio entre interpolación bilineal y Malvar2004.}
-    \label{fig:comparacion_metricas}
+    \includegraphics[width=0.92\linewidth]{Fig/fig2.png}
+    \caption{Mosaico ilustrativo del dataset Kodak utilizado en la evaluación.}
+    \label{fig:dataset}
 \end{figure}
 
-Los resultados por imagen se guardaron en el archivo \texttt{resultados\_metricas.csv}, y el resumen estadístico en \texttt{resultados\_resumen.csv}. Estos archivos se generaron a partir del mismo flujo experimental usado en el notebook.
+\subsection{Implementación reproducible}
 
-\section{\sffamily Conclusiones}
+El flujo esencial de adquisición y reconstrucción bilineal es:
 
-Se implementó exitosamente un sistema de fotografía computacional basado en un mosaico Bayer RGGB. La interpolación bilineal logró reconstrucciones razonables, con un PSNR promedio de 29.4849 dB, SSIM promedio de 0.8917 y SAM promedio de 2.4072 grados. Esto indica que el método conserva buena parte de la estructura visual y mantiene una relación espectral aceptable entre los canales RGB.
+\begin{lstlisting}[caption={Flujo de generación del mosaico y reconstrucción bilineal.},label={lst:flujo}]
+sample = load_rgb_image(path)
+mosaic = rgb_to_bayer_mosaic(sample, pattern="RGGB")
+bilinear = demosaick_interpolation(mosaic,
+                                    pattern="RGGB",
+                                    method="bilinear")
+malvar = demosaick_malvar2004(mosaic, pattern="RGGB")
 
-No obstante, la reconstrucción bilineal presenta limitaciones visuales. En algunas imágenes se observan franjas tipo arcoíris, falso color y errores cerca de bordes o texturas finas. Estos artefactos aparecen porque el método usa filtros locales fijos y no adapta la interpolación a la dirección de los bordes ni a la correlación entre canales.
+bilinear_metrics = compute_metrics(sample, bilinear)
+malvar_metrics = compute_metrics(sample, malvar)
+\end{lstlisting}
 
-El algoritmo Malvar2004 obtuvo mejores resultados en todas las métricas: el PSNR promedio aumentó a 34.6940 dB, el SSIM promedio subió a 0.9681 y el SAM promedio bajó a 1.7049 grados. La mejora se explica porque este método usa filtros lineales con corrección de gradiente, incorporando información local y correlación entre canales. Por lo tanto, para el dataset Kodak, Malvar2004 entrega una reconstrucción más precisa, consistente y con menos artefactos que la interpolación bilineal base.
+La celda final del notebook también recorre las 24 imágenes y muestra tres paneles por imagen: original, reconstrucción bilineal y reconstrucción \malvar{}. Los resultados se guardan en \texttt{resultados/metricas\_comparacion\_por\_imagen.csv}.
 
-%-------------------------------------------------------------------------
-% BIBLIOGRAPHY
-%-------------------------------------------------------------------------
+\section{Resultados}
 
+\subsection{Comparación visual}
+
+La Figura~\ref{fig:comparacion-01} muestra la imagen 01 del dataset y las dos reconstrucciones. La interpolación bilineal conserva la apariencia global, pero introduce variaciones cromáticas en los bordes de ventanas y en las líneas horizontales de la pared. \malvar{} reduce esas variaciones y mantiene una apariencia más cercana a la referencia.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{Fig/kodak01_comparacion_bilineal_malvar.png}
+    \caption{Imagen Kodak 01: referencia original, reconstrucción bilineal y reconstrucción \malvar{}.}
+    \label{fig:comparacion-01}
+\end{figure}
+
+Para aislar el artefacto de falso color se inspeccionó la primera ventana de la zona inferior derecha, usando $x=380{:}570$ e $y=230{:}400$. La ampliación de la Figura~\ref{fig:zoom-01} evidencia que la interpolación bilineal genera bordes azules y amarillos alrededor del marco y los ladrillos, mientras que \malvar{} reduce la amplitud de ese halo cromático.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{Fig/kodak01_zoom_bilineal_malvar.png}
+    \caption{Comparación ampliada de la primera ventana inferior derecha, región $x=380{:}570$, $y=230{:}400$ en la imagen Kodak 01.}
+    \label{fig:zoom-01}
+\end{figure}
+
+La inspección visual no reemplaza las métricas, pero permite identificar qué tipo de error explica la diferencia cuantitativa. En particular, PSNR penaliza el error cromático píxel a píxel, SSIM penaliza deformaciones de estructura local y SAM refleja cambios en la dirección del color RGB.
+
+\Needspace{12\baselineskip}
+\subsection{Resumen estadístico}
+
+La Tabla~\ref{tab:resumen} presenta el promedio y la desviación estándar en las 24 imágenes.
+
+\begin{table}[H]
+\centering
+\caption{Promedio y desviación estándar de las métricas en el dataset Kodak.}
+\label{tab:resumen}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Método & PSNR prom. & PSNR std. & SSIM prom. & SSIM std. & SAM prom. & SAM std. \\
+\midrule
+\bilinear{} & 29.4849 & 2.8141 & 0.8917 & 0.0399 & 2.4072 & 1.0290 \\
+\malvar{} & 34.6940 & 2.5837 & 0.9681 & 0.0082 & 1.7049 & 0.6901 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+La diferencia entre métodos es
+
+\begin{equation}
+ \Delta\operatorname{PSNR}=+5.2091\ \mathrm{dB},\qquad
+ \Delta\operatorname{SSIM}=+0.0764,qquad
+ \Delta\operatorname{SAM}=-0.7023^\circ.
+ \label{eq:ganancias}
+\end{equation}
+
+El aumento de PSNR equivale, de manera aproximada, a una reducción de 3.4 veces en el MSE promedio calculado imagen por imagen: $\overline{\operatorname{MSE}}\approx0.001400$ para \bilinear{} y $\overline{\operatorname{MSE}}\approx0.000407$ para \malvar{}. Además de mejorar el promedio, \malvar{} reduce la dispersión: la desviación estándar de SSIM baja de $0.0399$ a $0.0082$, y la de SAM de $1.0290^\circ$ a $0.6901^\circ$. Esto indica un comportamiento más estable entre escenas de distinta complejidad.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.98\linewidth]{Fig/comparacion_metricas_bilineal_malvar.png}
+    \caption{Comparación de los promedios de PSNR, SSIM y SAM. En SAM, la barra menor representa mejor calidad.}
+    \label{fig:metricas}
+\end{figure}
+
+\subsection{Resultados por imagen}
+
+La tabla completa con las 24 imágenes y las métricas de ambos métodos se incluye al final del documento como el Anexo~\ref{app:tabla-final}. Esto permite mantener el cuerpo principal enfocado en la comparación global, sin ocultar los resultados individuales.
+
+\subsection{Imágenes más y menos favorables}
+
+En la reconstrucción bilineal, la imagen 23 presenta el mejor resultado conjunto: $33.4203$ dB, SSIM $0.9570$ y SAM $1.0643^\circ$. En el extremo opuesto, la imagen 13 alcanza $23.8511$ dB, SSIM $0.7907$ y SAM $4.7398^\circ$; la imagen 08 también es exigente, con $23.5948$ dB y SAM $4.1950^\circ$. Estas diferencias muestran que el contenido espacial y cromático de la escena influye fuertemente en un método local.
+
+Con \malvar{}, la imagen 23 sigue siendo la mejor evaluada, mientras que la imagen 13 sigue siendo la más difícil. Sin embargo, incluso en la imagen 13 se obtiene una mejora a $29.4930$ dB, SSIM $0.9510$ y SAM $3.2862^\circ$. La reducción de la desviación estándar de SSIM sugiere que las correcciones de Malvar son particularmente efectivas para homogenizar la calidad estructural entre imágenes.
+
+\section{Discusión}
+
+\subsection{Por qué mejoran las métricas}
+
+La mejora no proviene de cambiar el dataset ni la definición de las métricas. Ambos métodos usan el mismo mosaico RGGB, la misma referencia original y el mismo rango dinámico. El cambio está en el operador de reconstrucción.
+
+La interpolación bilineal trata cada canal de forma independiente con pesos fijos. En un borde, las muestras de un canal pueden pertenecer a un lado del contorno y las muestras vecinas de otro canal al lado contrario. Un promedio isotrópico mezcla ambas regiones y genera suavizado o colores que no estaban en la escena. Ese error incrementa el MSE, reduce PSNR, deteriora la estructura local medida por SSIM y cambia la dirección de los vectores RGB medida por SAM.
+
+\malvar{} utiliza una ventana más grande y filtros orientados al patrón Bayer. Los coeficientes centrales preservan las muestras disponibles, mientras que los coeficientes positivos y negativos compensan gradientes y diferencias cromáticas. En consecuencia, el método reconstruye mejor los bordes sin limitarse a promediar todos los vecinos. Esto explica simultáneamente el aumento de PSNR, el aumento de SSIM y la reducción de SAM.
+
+\subsection{Limitaciones del análisis}
+
+Los umbrales de calidad de la Tabla~\ref{tab:rangos} son orientativos, no criterios absolutos. Además, el SAM implementado incluye píxeles oscuros y utiliza un término $\varepsilon$ para estabilización numérica; por ello, una implementación alternativa que enmascare píxeles de baja energía podría producir valores ligeramente distintos. SSIM también depende de la ventana espacial y del tratamiento de bordes. Finalmente, el experimento evalúa un patrón RGGB y no estudia ruido del sensor, balance de blancos, demosaicking adaptativo ni imágenes RAW lineales.
+
+\section{Conclusiones}
+
+Se implementó un sistema reproducible de adquisición Bayer y reconstrucción RGB sobre las 24 imágenes Kodak. La formulación mediante máscaras binarias y producto de Kronecker permite expresar claramente el muestreo, mientras que los filtros 2D permiten reconstruir los canales faltantes sin entrenamiento.
+
+La interpolación bilineal constituye una referencia simple y razonable, pero sus pesos fijos producen falso color y suavizado en regiones de alta frecuencia. \malvar{} mejora el promedio de PSNR en $5.2091$ dB, aumenta SSIM en $0.0764$ y reduce SAM en $0.7023^\circ$. La mejora se observa en las 24 imágenes y viene acompañada de menor dispersión entre escenas.
+
+La evidencia visual y cuantitativa es consistente: en la imagen 01, la ampliación de una ventana y su entorno muestra que \malvar{} reduce halos cromáticos; en el conjunto completo, la tabla por imagen confirma que el resultado no depende de una sola escena. Por lo tanto, para este protocolo, \malvar{} es una alternativa claramente superior a la interpolación bilineal cuando se busca preservar bordes, estructura y coherencia cromática.
+
+\section{Material complementario}
+
+El material computacional que acompaña este informe se encuentra en el notebook
+\begin{center}
+\texttt{tareas/tarea-01/homework1.ipynb}.
+\end{center}
+El notebook contiene la definición del patrón RGGB, la generación del mosaico y
+las máscaras Bayer, las reconstrucciones bilineal y Malvar2004, la evaluación de
+PSNR, SSIM y SAM, las visualizaciones de recortes y la tabla final exportada a
+\url{tareas/tarea-01/resultados/metricas_comparacion_por_imagen.csv}.
+
+Durante el desarrollo se utilizaron Codex de OpenAI y Claude Code de Anthropic
+como herramientas de apoyo para explorar y revisar la implementación, organizar
+la explicación matemática, detectar errores de presentación y preparar las
+visualizaciones \cite{openai-codex,claude-code}. Estas herramientas no sustituyen
+la revisión del autor: las fórmulas, el código, los valores tabulados y las
+conclusiones fueron contrastados con la ejecución del notebook y con las
+referencias académicas y técnicas citadas en este informe.
+
+% -----------------------------------------------------------------------------
+% Bibliografía: se cierra el cuerpo principal antes de comenzar los anexos.
+% -----------------------------------------------------------------------------
+\clearpage
+\renewcommand{\refname}{Referencias}
 \bibliographystyle{apalike}
 \bibliography{Referencias}
+\newpage
+
+\appendix
+\section{Anexos}
+\label{app:anexos}
+
+\subsection{Tabla final de resultados por imagen}
+\label{app:tabla-final}
+
+Este anexo contiene la salida final de la comparación realizada en el notebook. Cada fila corresponde a una imagen Kodak y reporta PSNR, SSIM y SAM para la reconstrucción bilineal y para \malvar{}. Los valores se redondean a cuatro decimales, igual que en la tabla exportada por el notebook.
+
+\begin{landscape}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.05}
+\captionof{table}{Resultados finales por imagen para ambos métodos.}
+\label{tab:por-imagen}
+\resizebox{0.60\linewidth}{!}{%
+\begin{tabular}{r l r r r r r r}
+\toprule
+\# & Imagen & \multicolumn{3}{c}{\bilinear{}} & \multicolumn{3}{c}{\malvar{}}\\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+ & & PSNR (dB) & SSIM & SAM ($^\circ$) & PSNR (dB) & SSIM & SAM ($^\circ$)\\
+\midrule
+0  & 01.png & 26.0131 & 0.8166 & 3.6231 & 31.6608 & 0.9553 & 2.4269 \\
+1  & 02.png & 32.0180 & 0.8984 & 1.6612 & 35.8906 & 0.9617 & 1.2856 \\
+2  & 03.png & 32.8477 & 0.9309 & 1.2783 & 37.1981 & 0.9764 & 0.9568 \\
+3  & 04.png & 32.5195 & 0.9157 & 1.5814 & 37.4597 & 0.9738 & 1.1332 \\
+4  & 05.png & 26.4544 & 0.8858 & 4.1863 & 32.8102 & 0.9746 & 2.9792 \\
+5  & 06.png & 27.3858 & 0.8516 & 2.6478 & 32.5555 & 0.9597 & 1.8109 \\
+6  & 07.png & 32.3303 & 0.9536 & 1.6316 & 37.6348 & 0.9835 & 1.1268 \\
+7  & 08.png & 23.5948 & 0.8359 & 4.1950 & 29.1082 & 0.9560 & 2.9363 \\
+8  & 09.png & 31.6912 & 0.9216 & 1.4048 & 37.2758 & 0.9731 & 1.0336 \\
+9  & 10.png & 31.6152 & 0.9218 & 1.4285 & 37.7716 & 0.9754 & 1.0147 \\
+10 & 11.png & 28.9184 & 0.8739 & 2.7948 & 34.3734 & 0.9655 & 2.0112 \\
+11 & 12.png & 32.1053 & 0.9087 & 1.1527 & 37.5307 & 0.9718 & 0.8534 \\
+12 & 13.png & 23.8511 & 0.7907 & 4.7398 & 29.4930 & 0.9510 & 3.2862 \\
+13 & 14.png & 28.7647 & 0.8782 & 2.9744 & 33.4843 & 0.9661 & 2.1162 \\
+14 & 15.png & 30.6340 & 0.9127 & 2.1082 & 35.1667 & 0.9656 & 1.6374 \\
+15 & 16.png & 30.4205 & 0.8791 & 2.3384 & 34.9965 & 0.9655 & 1.6249 \\
+16 & 17.png & 31.9761 & 0.9309 & 2.2858 & 37.4953 & 0.9795 & 1.6845 \\
+17 & 18.png & 27.9229 & 0.8757 & 3.5939 & 33.5967 & 0.9671 & 2.4080 \\
+18 & 19.png & 28.1639 & 0.8784 & 2.3489 & 33.7466 & 0.9663 & 1.5501 \\
+19 & 20.png & 29.7778 & 0.9158 & 1.7736 & 34.6362 & 0.9642 & 1.3662 \\
+20 & 21.png & 28.3224 & 0.8946 & 2.5357 & 33.8479 & 0.9675 & 1.7972 \\
+21 & 22.png & 30.2128 & 0.8899 & 2.0187 & 35.0341 & 0.9645 & 1.4373 \\
+22 & 23.png & 33.4203 & 0.9570 & 1.0643 & 37.8595 & 0.9807 & 0.8504 \\
+23 & 24.png & 26.6766 & 0.8823 & 2.4063 & 32.0299 & 0.9702 & 1.5919 \\
+\bottomrule
+\end{tabular}%
+}
+\end{landscape}
+
+\subsection{Comparaciones visuales de las 24 imágenes Kodak}
+
+Las siguientes láminas reúnen la comparación completa del dataset. Cada fila
+corresponde a una imagen y muestra, de izquierda a derecha, la imagen RGB
+original, la reconstrucción por interpolación bilineal y la reconstrucción
+Malvar2004. La generación individual de estas comparaciones se encuentra en la
+última sección del notebook.
+
+\begin{landscape}
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_01_04.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 01--04.}
+    \label{fig:anexo-01-04}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_05_08.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 05--08.}
+    \label{fig:anexo-05-08}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_09_12.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 09--12.}
+    \label{fig:anexo-09-12}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_13_16.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 13--16.}
+    \label{fig:anexo-13-16}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_17_20.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 17--20.}
+    \label{fig:anexo-17-20}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.78\textheight,keepaspectratio]{Fig/anexo_comparaciones_21_24.png}
+    \caption{Comparaciones visuales para las imágenes Kodak 21--24.}
+    \label{fig:anexo-21-24}
+\end{figure}
+\end{landscape}
 
 \end{document}

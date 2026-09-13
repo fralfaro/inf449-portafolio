@@ -1,0 +1,9 @@
+imagen,base,P [%],coeficientes no nulos,MSE,PSNR [dB]
+cameraman,Wavelet Haar,5,3277,0.0008872,30.51978869
+cameraman,Wavelet Haar,10,6554,0.00037857,34.21855785
+cameraman,Wavelet Haar,20,13108,0.00011235,39.49411347
+cameraman,Wavelet Haar,50,32768,3.58e-06,54.45942964
+cameraman,DCT,5,3277,0.00208508,26.80877175
+cameraman,DCT,10,6554,0.00113383,29.45451606
+cameraman,DCT,20,13108,0.00049627,33.04279213
+cameraman,DCT,50,32768,6.939e-05,41.58701809

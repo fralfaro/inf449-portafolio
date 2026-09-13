@@ -1,0 +1,4 @@
+model,parameters,MSE,PSNR [dB],SSIM
+CNN 32 canales,57383,0.0019,27.4779,0.8421
+CNN base Figura 3,14967,0.0031,25.3716,0.8427
+CNN 32 canales + residuales,131367,0.0039,24.4856,0.8075

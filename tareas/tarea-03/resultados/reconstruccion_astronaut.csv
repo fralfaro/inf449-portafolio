@@ -1,0 +1,9 @@
+imagen,base,P [%],coeficientes no nulos,MSE,PSNR [dB]
+astronaut,Wavelet Haar,5,3277,0.00301003,25.21428776
+astronaut,Wavelet Haar,10,6554,0.0011895,29.24634909
+astronaut,Wavelet Haar,20,13108,0.00028966,35.38106007
+astronaut,Wavelet Haar,50,32768,8.77e-06,50.57204062
+astronaut,DCT,5,3277,0.00333545,24.76846159
+astronaut,DCT,10,6554,0.00177596,27.50567524
+astronaut,DCT,20,13108,0.0007469,31.267363
+astronaut,DCT,50,32768,9.384e-05,40.27596285
