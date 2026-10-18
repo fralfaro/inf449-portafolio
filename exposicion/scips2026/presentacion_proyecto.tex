@@ -1,0 +1,369 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric}
+
+\definecolor{navy}{HTML}{0F2044}
+\definecolor{blue}{HTML}{2F6F9F}
+\definecolor{cyan}{HTML}{DCEFF7}
+\definecolor{green}{HTML}{2E8B57}
+\definecolor{orange}{HTML}{E68A2E}
+\definecolor{red}{HTML}{B94A48}
+\definecolor{gray}{HTML}{5B6573}
+\definecolor{lightgray}{HTML}{F3F5F7}
+
+\usetheme{Boadilla}
+\usecolortheme{dove}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{\begin{beamercolorbox}[wd=.78\paperwidth,ht=2.5ex,dp=1ex,leftskip=1em]{author in head/foot}%
+    \color{gray}\scriptsize Proyecto final · INF449
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.22\paperwidth,ht=2.5ex,dp=1ex,rightskip=1em]{date in head/foot}%
+    \color{gray}\scriptsize\hfill\insertframenumber/\inserttotalframenumber
+  \end{beamercolorbox}}%
+}
+\setbeamercolor{normal text}{fg=navy,bg=white}
+\setbeamercolor{structure}{fg=blue}
+\setbeamercolor{frametitle}{fg=navy,bg=white}
+\setbeamerfont{frametitle}{series=\bfseries,size=\Large}
+\setbeamercolor{block title}{fg=white,bg=navy}
+\setbeamercolor{block body}{fg=navy,bg=lightgray}
+\setbeamertemplate{itemize item}{\color{blue}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{orange}$\blacktriangleright$}
+
+\newcommand{\status}[2]{\textcolor{#1}{\textbf{#2}}}
+\newcommand{\smallnote}[1]{\vspace{0.15em}{\color{gray}\scriptsize #1}}
+
+\title{Single Pixel Camera + Gaussian Splatting}
+\subtitle{Reconstrucción comprimida 2D y representación 3D multivista}
+\author{Francisco Alfaro Medina}
+\institute{Universidad Técnica Federico Santa María · INF449}
+\date{Proyecto final · 2026}
+
+\begin{document}
+
+% 1
+\begin{frame}[plain]
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[navy] (current page.south west) rectangle (current page.north east);
+    \fill[blue,opacity=.35] (current page.south east) -- ++(-4.8,0) -- ++(4.8,3.8) -- cycle;
+    \fill[orange,opacity=.85] (current page.north east) circle (1.0cm);
+  \end{tikzpicture}
+  \vspace{1.2cm}
+  {\color{white}\Huge\bfseries Single Pixel Camera\\[0.2em] + Gaussian Splatting\par}
+  \vspace{0.8cm}
+  {\color{cyan}\Large De mediciones comprimidas a una escena 3D renderizable\par}
+  \vfill
+  {\color{white}\large Francisco Alfaro Medina\\}
+  {\color{cyan}\normalsize Universidad Técnica Federico Santa María · INF449\\[0.3em]Proyecto final · 2026}
+\end{frame}
+
+% 2
+\begin{frame}{Motivación y pregunta del proyecto}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.53\textwidth}
+    \begin{block}{Problema}
+      Una cámara convencional mide muchos píxeles por imagen. Una cámara de un solo píxel mide un escalar por patrón óptico y debe reconstruir la imagen a partir de mediciones comprimidas.
+    \end{block}
+    \vspace{0.3em}
+    \begin{itemize}
+      \item La compresión puede reducir tiempo, datos y costo del sensor.
+      \item Gaussian Splatting necesita varias vistas RGB y poses de cámara.
+      \item La pregunta es cómo afecta la degradación 2D a la reconstrucción 3D.
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.42\textwidth}
+    \centering
+    \begin{tikzpicture}[node distance=0.45cm,box/.style={rounded corners,draw=blue,fill=cyan,minimum width=3.8cm,minimum height=.8cm,align=center,font=\small},arrow/.style={-{Latex},thick,blue}]
+      \node[box] (capture) {adquisición\\comprimida};
+      \node[box,below=of capture] (loss) {pérdida de detalle\\en 2D};
+      \node[box,below=of loss,fill=orange!20,draw=orange] (scene) {impacto en la\\escena 3D};
+      \draw[arrow] (capture) -- (loss);
+      \draw[arrow] (loss) -- (scene);
+    \end{tikzpicture}
+    \vspace{0.5em}
+    \smallnote{Estudio controlado: misma escena, mismas poses y distintos ratios de medición.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 3
+\begin{frame}{¿Qué hace una Single Pixel Camera?}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.48\textwidth}
+    Para una imagen vectorizada $x$ y una máscara $\phi_k$, la medición es:
+    \begin{equation*}
+      y_k = \langle \phi_k, x \rangle.
+    \end{equation*}
+    \begin{itemize}
+      \item Cada patrón produce un único valor $y_k$.
+      \item Repetimos la medición con distintos patrones.
+      \item Recuperamos una aproximación de $x$ usando los coeficientes observados.
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.48\textwidth}
+    \centering
+    \begin{tikzpicture}[node distance=0.55cm,smallbox/.style={rounded corners,draw=blue,fill=cyan,minimum width=2.8cm,minimum height=.7cm,align=center,font=\small},arrow/.style={-{Latex},thick,blue}]
+      \node[smallbox] (image) {escena $x$};
+      \node[smallbox,below=of image] (mask) {máscara $\phi_k$\\+1 / -1};
+      \node[smallbox,below=of mask,fill=orange!20,draw=orange] (measure) {sensor único\\$y_k$};
+      \node[smallbox,below=of measure,fill=green!15,draw=green] (recon) {reconstrucción\\2D};
+      \draw[arrow] (image) -- (mask);
+      \draw[arrow] (mask) -- (measure);
+      \draw[arrow] (measure) -- (recon);
+    \end{tikzpicture}
+    \vspace{0.3em}
+    \smallnote{En el notebook usamos una base Hadamard ordenada aproximadamente por frecuencia espacial.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 4
+\begin{frame}{¿Qué hace Gaussian Splatting?}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.54\textwidth}
+    Gaussian Splatting representa una escena como una colección de gaussianas 3D. Cada una tiene, entre otros parámetros:
+    \begin{itemize}
+      \item posición, escala y orientación;
+      \item color y opacidad;
+      \item contribución al render desde una cámara dada.
+    \end{itemize}
+    \vspace{0.4em}
+    El entrenamiento ajusta las gaussianas para que sus renders reproduzcan las imágenes de entrada.
+  \end{column}
+  \begin{column}{0.4\textwidth}
+    \centering
+    \begin{tikzpicture}[node distance=.45cm,cloud/.style={ellipse,draw=blue,fill=cyan,minimum width=1.0cm,minimum height=.55cm},box/.style={rounded corners,draw=orange,fill=orange!18,minimum width=3.4cm,minimum height=.75cm,align=center,font=\small},arrow/.style={-{Latex},thick,blue}]
+      \node[cloud] (g1) at (0,1.0) {};
+      \node[cloud] (g2) at (1.0,1.35) {};
+      \node[cloud] (g3) at (2.0,1.0) {};
+      \node[cloud] (g4) at (1.0,.45) {};
+      \node[box] (render) at (1,-.45) {proyección y\\render 2D};
+      \draw[arrow] (g1) -- (render);
+      \draw[arrow] (g2) -- (render);
+      \draw[arrow] (g3) -- (render);
+      \draw[arrow] (g4) -- (render);
+    \end{tikzpicture}
+    \vspace{0.5em}
+    \smallnote{Requiere imágenes multivista, intrínsecos y poses de cámara.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 5
+\begin{frame}{Idea central: conectar ambos mundos}
+\centering
+\begin{tikzpicture}[node distance=.55cm,box/.style={rounded corners,draw=blue,fill=cyan,minimum width=2.45cm,minimum height=1.0cm,align=center,font=\small},arrow/.style={-{Latex},very thick,blue},note/.style={font=\scriptsize\color{gray},align=center}]
+  \node[box] (views) {vistas RGB\\multivista};
+  \node[box,right=of views] (spc) {mediciones SPC\\Hadamard};
+  \node[box,right=of spc] (rec) {vistas\\reconstruidas};
+  \node[box,right=of rec,fill=orange!20,draw=orange] (gs) {Gaussian\\Splatting};
+  \node[box,right=of gs,fill=green!15,draw=green] (scene) {escena 3D\\renderizable};
+  \draw[arrow] (views) -- (spc);
+  \draw[arrow] (spc) -- (rec);
+  \draw[arrow] (rec) -- (gs);
+  \draw[arrow] (gs) -- (scene);
+  \node[note,below=of views] {escena \texttt{truck}\\poses COLMAP};
+  \node[note,below=of spc] {10\%, 25\%, 50\%\\de mediciones};
+  \node[note,below=of rec] {misma resolución\\y mismos nombres};
+  \node[note,below=of gs] {entrenamiento\\con GPU Colab};
+\end{tikzpicture}
+\vspace{1.1cm}
+\begin{block}{Hipótesis experimental}
+  La fusión de varias vistas puede compensar parcialmente la pérdida de detalle de cada reconstrucción SPC, pero existe un ratio mínimo donde la calidad 3D se degrada de forma visible.
+\end{block}
+\end{frame}
+
+% 6
+\begin{frame}{Notebook 1 — Single Pixel Camera en Colab}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.58\textwidth}
+    \begin{enumerate}
+      \item Montar Google Drive para guardar resultados.
+      \item Descargar `tandt\_db.zip` directamente en `/content` mediante `wget` y `unzip`.
+      \item Localizar la escena `truck` y alinear imágenes con `images.bin`.
+      \item Redimensionar temporalmente a $64\times64$.
+      \item Simular mediciones Hadamard y reconstruir cada vista.
+      \item Guardar imágenes, mediciones, métricas y poses en Drive.
+    \end{enumerate}
+  \end{column}
+  \begin{column}{0.38\textwidth}
+    \begin{block}{Salida persistente}
+      \scriptsize
+      \texttt{spc\_runs/spc\_pilot/}\\[0.3em]
+      \texttt{manifest.json}\\
+      \texttt{summary\_2d.csv}\\
+      \texttt{original/}\\
+      \texttt{spc\_010/}\\
+      \texttt{spc\_025/}\\
+      \texttt{spc\_050/}
+    \end{block}
+    \smallnote{`/content` es temporal; Drive conserva los resultados.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 7
+\begin{frame}{Notebook 2 — Gaussian Splatting en Colab}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.52\textwidth}
+    \begin{enumerate}
+      \item Leer el `manifest.json` desde Drive.
+      \item Copiar localmente las imágenes y las poses COLMAP.
+      \item Filtrar `images.bin` para conservar solo las vistas disponibles.
+      \item Clonar y compilar Gaussian Splatting y sus extensiones CUDA.
+      \item Entrenar, renderizar y evaluar cada condición.
+      \item Copiar modelos, logs y métricas de vuelta a Drive.
+    \end{enumerate}
+  \end{column}
+  \begin{column}{0.44\textwidth}
+    \begin{tikzpicture}[node distance=.45cm,box/.style={rounded corners,draw=blue,fill=cyan,minimum width=3.8cm,minimum height=.7cm,align=center,font=\small},arrow/.style={-{Latex},thick,blue}]
+      \node[box] (data) {dataset SPC desde Drive};
+      \node[box,below=of data] (cuda) {GPU + extensiones CUDA};
+      \node[box,below=of cuda,fill=orange!20,draw=orange] (train) {train.py / render.py};
+      \node[box,below=of train,fill=green!15,draw=green] (out) {modelo + métricas + renders};
+      \draw[arrow] (data) -- (cuda);
+      \draw[arrow] (cuda) -- (train);
+      \draw[arrow] (train) -- (out);
+    \end{tikzpicture}
+    \smallnote{La segunda etapa requiere ejecutar Colab con una GPU CUDA activa.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 8
+\begin{frame}{Diseño experimental y métricas}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.56\textwidth}
+    \centering
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{lll}
+      \toprule
+      Condición & Entrada & Propósito \\
+      \midrule
+      \texttt{original} & RGB original & baseline \\
+      \texttt{spc\_010} & 10\% mediciones & alta compresión \\
+      \texttt{spc\_025} & 25\% mediciones & caso piloto \\
+      \texttt{spc\_050} & 50\% mediciones & menor pérdida \\
+      \bottomrule
+    \end{tabular}
+    \vspace{0.7em}
+    \smallnote{Escena, poses, nombres, semilla y protocolo se mantienen fijos.}
+  \end{column}
+  \begin{column}{0.38\textwidth}
+    \begin{block}{Calidad 2D}
+      \textbf{PSNR}: error fotométrico, mayor es mejor.\\
+      \textbf{SSIM}: estructura, más cercano a 1 es mejor.
+    \end{block}
+    \begin{block}{Calidad 3D}
+      PSNR, SSIM y LPIPS sobre renders de Gaussian Splatting.\\[0.2em]
+      Comparar contra la entrada degradada y, cuando sea posible, contra la imagen original.
+    \end{block}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 9
+\begin{frame}{¿En qué estado estamos?}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.31\textwidth}
+    \begin{block}{Listo}
+      \begin{itemize}
+        \item Flujo dividido en dos notebooks.
+        \item Descarga automática del dataset.
+        \item Simulación Hadamard.
+        \item Exportación compatible con COLMAP.
+        \item Métricas 2D y manifest.
+      \end{itemize}
+    \end{block}
+  \end{column}
+  \begin{column}{0.31\textwidth}
+    \begin{block}{Validado estáticamente}
+      \begin{itemize}
+        \item JSON de notebooks correcto.
+        \item Celdas sintácticamente válidas.
+        \item Búsqueda robusta de `truck`.
+        \item Contrato Drive entre notebooks.
+      \end{itemize}
+    \end{block}
+  \end{column}
+  \begin{column}{0.31\textwidth}
+    \setbeamercolor{block title}{bg=orange!85!black}
+    \begin{block}{Pendiente}
+      \begin{itemize}
+        \item Ejecutar Notebook 1 en Colab.
+        \item Compilar 3DGS con GPU.
+        \item Entrenar las condiciones.
+        \item Obtener renders y métricas reales.
+        \item Analizar resultados.
+      \end{itemize}
+    \end{block}
+    \setbeamercolor{block title}{bg=navy}
+  \end{column}
+\end{columns}
+\vfill
+\centering
+\status{green}{Implementación preparada} \hspace{1em} $\rightarrow$ \hspace{1em}
+\status{orange}{experimentación en Colab pendiente}
+\end{frame}
+
+% 10
+\begin{frame}{Trabajo pendiente y riesgos}
+\begin{columns}[T,onlytextwidth]
+  \begin{column}{0.52\textwidth}
+    \begin{enumerate}
+      \item Ejecutar el piloto con `spc\_025` y confirmar que las poses COLMAP son compatibles.
+      \item Medir tiempo, memoria y VRAM de la compilación/entrenamiento.
+      \item Entrenar `original`, `spc\_010`, `spc\_025` y `spc\_050`.
+      \item Comparar calidad 2D versus calidad del render 3D.
+      \item Preparar figuras, discusión y conclusión del informe.
+    \end{enumerate}
+  \end{column}
+  \begin{column}{0.42\textwidth}
+    \begin{block}{Riesgos técnicos}
+      \begin{itemize}
+        \item La compilación CUDA depende del runtime de Colab.
+        \item El entrenamiento completo puede agotar tiempo o VRAM.
+        \item Las imágenes reconstruidas se reescalan para mantener la calibración.
+        \item La SPC es simulada: no se evalúa aún un sensor físico.
+      \end{itemize}
+    \end{block}
+  \end{column}
+\end{columns}
+\end{frame}
+
+% 11
+\begin{frame}{Cierre: entregable y criterio de éxito}
+\begin{block}{Entregable final}
+  Un pipeline reproducible en Google Colab que conecte adquisición comprimida, reconstrucción 2D y representación 3D, dejando todos los artefactos en Drive.
+\end{block}
+\vspace{0.5em}
+\begin{tikzpicture}[node distance=.6cm,box/.style={rounded corners,draw=blue,fill=cyan,minimum width=2.5cm,minimum height=.8cm,align=center,font=\small},arrow/.style={-{Latex},very thick,blue}]
+  \node[box] (a) {mediciones\\Hadamard};
+  \node[box,right=of a] (b) {vistas\\reconstruidas};
+  \node[box,right=of b,fill=orange!20,draw=orange] (c) {gaussianas\\3D};
+  \node[box,right=of c,fill=green!15,draw=green] (d) {render y\\evaluación};
+  \draw[arrow] (a) -- (b);
+  \draw[arrow] (b) -- (c);
+  \draw[arrow] (c) -- (d);
+\end{tikzpicture}
+\vspace{0.65em}
+\begin{itemize}
+  \item Éxito mínimo: entrenar y renderizar una condición sin romper la correspondencia imagen--pose.
+  \item Resultado científico: cuantificar cuánto deteriora la compresión SPC la calidad de la escena 3D.
+  \item Próximo hito: ejecutar el piloto en Colab y reemplazar esta diapositiva con resultados reales.
+\end{itemize}
+\vfill
+\centering{\color{blue}\Large Preguntas}
+\end{frame}
+
+\end{document}

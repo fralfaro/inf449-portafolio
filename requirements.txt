@@ -5,6 +5,8 @@ Pillow
 scipy
 opencv-python
 scikit-image
+lpips
 tqdm
 jupyter
 notebook
+certifi

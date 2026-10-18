@@ -1,0 +1,352 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla,es-nodecimaldot]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\graphicspath{{Fig/}}
+\hypersetup{colorlinks=true,linkcolor=MidnightBlue,urlcolor=MidnightBlue,citecolor=MidnightBlue,
+  pdftitle={Elementos difractivos y deconvolución},
+  pdfauthor={Francisco Alfaro Medina}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.15}
+\captionsetup{font=small,labelfont=bf}
+
+% Logo: se busca primero en Fig/ (entrega autocontenida) y luego en img/ del repositorio.
+\IfFileExists{Fig/utfsm.png}{\def\logoutfsm{Fig/utfsm.png}}{%
+  \IfFileExists{../../img/utfsm.png}{\def\logoutfsm{../../img/utfsm.png}}{\def\logoutfsm{}}}
+
+\title{\ifx\logoutfsm\empty\else\includegraphics[width=5.7cm]{\logoutfsm}\\[0.35cm]\fi
+\large Universidad Técnica Federico Santa María\\
+Departamento de Informática\\[0.35cm]
+\rule{\linewidth}{0.5pt}\\[0.25cm]
+\LARGE\textbf{Elementos difractivos y deconvolución}\\
+\Large Tarea 4 — Fotografía Computacional (INF-449)\\[-0.05cm]
+\rule{\linewidth}{1.5pt}}
+\author{\large Francisco Alfaro Medina}
+\date{Octubre de 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+Este informe simula un sistema de fotografía computacional en color compuesto por un elemento óptico difractivo (DOE), un filtro Bayer RGGB y una etapa de deconvolución. La PSF de cada canal se obtiene como el módulo al cuadrado de la transformada de Fourier de una pupila circular cuya fase combina una fase cúbica ($\alpha=18$~rad) con cuatro modos de Zernike. Tras un demosaicking bilineal, se comparan los filtros de Wiener y Richardson--Lucy (RL), implementados desde cero y con \texttt{skimage.restoration}, sobre las 18 imágenes del dataset McMaster, mediante PSNR, SSIM y SAM. Con la misma imagen, PSF, $\tau$ e iteraciones, las implementaciones propias reproducen a \texttt{skimage} hasta la precisión de máquina. Wiener ($\tau=0.01$) eleva el PSNR medio de 16.68~dB a 19.45~dB y RL ($K=25$) a 18.38~dB; RL obtiene un SSIM medio mayor (0.6440 frente a 0.6259). Ningún método con $\tau$ constante o RL mejora el SAM medio del demosaicking (7.97$^\circ$); solo el Wiener con regularización Laplaciana, la opción por defecto de \texttt{skimage}, lo reduce (7.57$^\circ$).
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Resumen}
+
+La guía solicita portar a Python el simulador MATLAB MSFA-DOE~\cite{msfadoe}, modelar una medición difractiva de color y resolver su deconvolución. Se utiliza la siguiente notación, que se mantiene en todo el informe: $I_c$ es el canal $c\in\{R,G,B\}$ de la imagen original; $\bar I_c=h_c*I_c$ es el canal desenfocado por el DOE; $y$ es la medición Bayer escalar; $\widetilde I_c$ es el canal obtenido por demosaicking (corresponde a $\bar{\mathbf f}_l$ en la ecuación~(3) de la guía), y $\widehat I_c$ es la reconstrucción (corresponde a $\hat{\mathbf f}_l$). El flujo implementado es
+\begin{equation}
+ I\;\xrightarrow{\,h_R,h_G,h_B\,}\;\bar I
+ \xrightarrow{\,\mathrm{Bayer}\,} y
+ \xrightarrow{\,\mathrm{demosaicking}\,} \widetilde I
+ \xrightarrow{\,\mathrm{deconvoluci\acute{o}n}\,} \widehat I.
+\end{equation}
+
+Los principales hallazgos son:
+\begin{itemize}[nosep]
+\item La deconvolución mejora claramente la calidad espacial: el PSNR medio sube 2.77~dB con Wiener y 1.71~dB con RL respecto del demosaicking, y el SSIM medio pasa de 0.3965 a 0.6259 (Wiener) y 0.6440 (RL).
+\item La calidad espectral (SAM) no mejora en promedio con Wiener de $\tau$ constante ni con RL; la deconvolución independiente por canal introduce franjas de color en contenido casi acromático.
+\item Las implementaciones propias y las de \texttt{skimage} coinciden con diferencias máximas de $1.8\times10^{-15}$ (Wiener) y exactamente cero (RL) por píxel, siempre que \texttt{skimage.restoration.wiener} reciba la misma regularización constante.
+\end{itemize}
+
+\section{Descripción de los experimentos}
+
+\subsection{Port del código MATLAB MSFA-DOE}
+\label{sec:port}
+
+El repositorio MSFA-DOE~\cite{msfadoe} (archivo principal \texttt{main\_multispectral.m}) simula un sistema refractivo-difractivo multiespectral de profundidad de campo extendida. Se portaron a Python sus componentes conceptuales: (i) la pupila generalizada y la PSF incoherente como $|\mathcal F\{\cdot\}|^2$ (\texttt{computePSF2.m}); (ii) la convolución de cada banda con su PSF (\texttt{DOE\_effect.m}); (iii) el muestreo por un arreglo de filtros de color (\texttt{Sensor.m}); (iv) la deconvolución por RL y el filtro de Wiener (\texttt{debluring.m}, \texttt{wienerFilter.m}), y (v) las métricas PSNR, SSIM y SAM (\texttt{metrics2.m}, \texttt{SpectralAngleMapper.m}). La Tabla~\ref{tab:port} resume qué se simplificó o difiere.
+
+\begin{table}[H]
+\centering
+\caption{Diferencias entre el código MATLAB de referencia y la versión Python.}
+\label{tab:port}
+\small
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\toprule
+Componente & MSFA-DOE (MATLAB) & Esta tarea (Python) \\
+\midrule
+DOE & Mapa de alturas físico (cuantizado a 128 niveles, altura máxima 1.3745~$\mu$m, ruido de fabricación); diseños cargados desde archivos \texttt{.mat}, entre ellos uno cúbico con Zernike optimizado con CMA-ES & Fase analítica en radianes: fase cúbica más cuatro modos de Zernike con coeficientes fijos, sin cuantización ni ruido de fabricación \\
+Dependencia espectral & $\Phi=k\,(n(\lambda)-1)\,d$ con 31 longitudes de onda entre 611 y 482~nm e índice $n(\lambda)$ variable & Fase escalada por $\lambda_0/\lambda$ (equivale a $n$ constante), tres longitudes de onda: 650, 550 y 450~nm \\
+Profundidad & Desenfoque $\Psi$ para seis distancias $z$ y lente refractiva & Un único plano enfocado; el desenfoque solo aparece como modo $Z_4$ \\
+Muestreo de la PSF & Pupila de radio 2.5~mm, paso 2.03~$\mu$m, \texttt{ft2} con escala física y remuestreo \texttt{imresize} & PSF en la misma grilla que la imagen ($256\times256$), sin relleno de ceros \\
+Sensor & MSFA, CASSI, pushbroom o RGB; ruido gaussiano opcional & Bayer RGGB periódico, sin ruido \\
+Recuperación previa & GAP-TV o interpolación según el sensor & Demosaicking bilineal \\
+Deconvolución & \texttt{deconvlucy} con 15 iteraciones o L2-TV & Wiener y RL propios y de \texttt{skimage}; RL con 25 iteraciones \\
+Métricas & \texttt{uint8}, PSNR y SSIM por canal con recorte de 6 píxeles de borde; SAM en radianes & Punto flotante en $[0,1]$, sin recorte de bordes; PSNR conjunto sobre los tres canales; SAM en grados \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Datos y configuración}
+
+Se utiliza el dataset McMaster~\cite{mcmaster}, que contiene 18 imágenes RGB de $500\times500$ píxeles. Para mantener tiempos razonables en CPU, cada imagen se redimensiona a $256\times256$ con un filtro de Lanczos y se normaliza a $[0,1]$. La resolución es un parámetro del script (\texttt{--size}).
+
+\begin{table}[H]
+\centering
+\caption{Parámetros del experimento.}
+\label{tab:parametros}
+\begin{tabular}{ll}
+\toprule
+Elemento & Configuración \\
+\midrule
+Dataset & McMaster, 18 imágenes RGB \\
+Resolución de trabajo & $256\times256$ \\
+Longitudes de onda (R, G, B) & 650, 550 y 450~nm; $\lambda_0=550$~nm \\
+DOE & fase cúbica ($\alpha=18$~rad) + $Z_4$, $Z_5$, $Z_6$, $Z_7$ \\
+Filtro de color & Bayer RGGB, sin ruido \\
+Demosaicking & interpolación bilineal \\
+Deconvolución & Wiener y Richardson--Lucy, por canal \\
+Regularización de Wiener & $\tau=0.01$ \\
+Iteraciones de RL & $K=25$, inicialización constante 0.5 \\
+Métricas & PSNR, SSIM y SAM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Elemento difractivo y PSF}
+
+Sea $(x,y)\in[-1,1]^2$ la coordenada normalizada en la apertura, $\rho=\sqrt{x^2+y^2}$ y $\theta=\operatorname{atan2}(y,x)$. La apertura circular es $A(x,y)=1$ si $\rho\leq1$ y cero fuera. La fase del DOE, en radianes a $\lambda_0=550$~nm, es
+\begin{equation}
+ \phi(x,y)=A(x,y)\left[\alpha\,(x^3+y^3)+0.30\,Z_4+0.18\,Z_5-0.12\,Z_6+0.08\,Z_7\right],
+ \qquad \alpha=18~\text{rad}.
+ \label{eq:fase}
+\end{equation}
+El término cúbico es la máscara de Dowski y Cathey~\cite{dowski}; con $\alpha=18$~rad su amplitud en el borde de la pupila equivale a unas 2.9 longitudes de onda. Los modos de Zernike siguen la indexación de Noll~\cite{noll}, pero se usan \emph{sin} la normalización RMS de Noll (se omiten los factores $\sqrt3$, $\sqrt6$ y $\sqrt8$), de modo que cada polinomio tiene amplitud de pico unitaria en el borde de la pupila:
+\begin{align}
+ Z_4&=2\rho^2-1 \quad\text{(desenfoque)}, &
+ Z_5&=\rho^2\sin2\theta \quad\text{(astigmatismo oblicuo)},\nonumber\\
+ Z_6&=\rho^2\cos2\theta \quad\text{(astigmatismo vertical)}, &
+ Z_7&=(3\rho^3-2\rho)\sin\theta \quad\text{(coma vertical)}.
+\end{align}
+Para cada longitud de onda se forma la pupila compleja y la PSF incoherente normalizada:
+\begin{equation}
+ P_\lambda=A\exp\!\left(i\,\frac{\lambda_0}{\lambda}\,\phi\right),\qquad
+ h_\lambda=\frac{\left|\mathcal{F}\{P_\lambda\}\right|^2}{\sum_{i,j}\left|\mathcal{F}\{P_\lambda\}\right|^2}.
+\end{equation}
+El factor $\lambda_0/\lambda$ modela un DOE de altura fija, cuyo retardo de fase es inversamente proporcional a la longitud de onda; así, cada canal tiene una PSF distinta (Figura~\ref{fig:psf}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth]{psf_doe.png}
+\caption{PSF (escala $\log_{10}$) generada por el DOE para los canales R (650~nm), G (550~nm) y B (450~nm).}
+\label{fig:psf}
+\end{figure}
+
+\subsection{Sensor Bayer y demosaicking}
+
+El canal desenfocado es $\bar I_c=h_c*I_c$, calculado como convolución lineal (con relleno de ceros) del mismo tamaño que la imagen. El sensor RGGB mide
+\begin{equation}
+ y(i,j)=\sum_{c\in\{R,G,B\}}B_c(i,j)\,\bar I_c(i,j),
+\end{equation}
+donde las máscaras binarias $B_c$ repiten el patrón $\left[\begin{smallmatrix}R&G\\G&B\end{smallmatrix}\right]$. No se agrega ruido de medición.
+
+El demosaicking es la interpolación bilineal clásica, descrita por Malvar et al.~\cite{malvar} como método de referencia: para cada canal se convolucionan las muestras observadas $B_c\odot y$ con el núcleo $k=\left[\begin{smallmatrix}1&2&1\\2&4&2\\1&2&1\end{smallmatrix}\right]$ y se normaliza por $k*B_c$; las muestras observadas se reimponen al final. Con el patrón RGGB esta normalización reproduce exactamente el promedio de los 2 o 4 vecinos disponibles de cada canal, que es el demosaicking bilineal estándar.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{modelo_sensor.png}
+\caption{Imagen original, imagen después del DOE, medición Bayer y detalle de $16\times16$ píxeles de las máscaras RGGB (imagen McMaster 1).}
+\label{fig:sensor}
+\end{figure}
+
+\subsection{Filtro de Wiener}
+
+Cada canal $\widetilde I_c$ se deconvoluciona de forma independiente. Con $H_c=\mathcal{F}\{h_c\}$ (la OTF, con la PSF centrada en el origen mediante \texttt{ifftshift}) y $\widetilde F_c=\mathcal{F}\{\widetilde I_c\}$, se implementa la ecuación~(4) de la guía, escribiendo $H_c^2$ como $|H_c|^2=H_c^*H_c$:
+\begin{equation}
+ \widehat I_c=\mathcal{F}^{-1}\left\{\frac{H_c^*}{|H_c|^2+\tau}\,\widetilde F_c\right\},
+ \qquad \tau=0.01.
+ \label{eq:wiener}
+\end{equation}
+La FFT supone convolución circular, mientras que el modelo directo usa convolución lineal; esta diferencia produce artefactos en los bordes (Figura~\ref{fig:reconstruccion}).
+
+\begin{table}[H]
+\centering
+\caption{Barrido de parámetros (promedios sobre las 18 imágenes). Arriba: $\tau$ del Wiener propio. Abajo: número de iteraciones $K$ del RL propio.}
+\input{resultados/barrido_parametros.tex}
+\label{tab:barrido}
+\end{table}
+
+\paragraph{Elección de $\tau$ y relación con la ecuación~(5).} La guía define $\tau=S_\omega/S_f$, el cociente entre el espectro de potencia del ruido y el de la señal. En esta simulación no se agrega ruido, por lo que el único ``ruido'' es el error del demosaicking, $\omega_c=\widetilde I_c-\bar I_c$. Suponiendo espectros planos, por Parseval $\tau\approx\|\omega\|_2^2/\|I\|_2^2$. Esta estimación da en promedio \TauEcCincoMedia{} (entre \TauEcCincoMin{} y \TauEcCincoMax{} según la imagen), pero el barrido de la Tabla~\ref{tab:barrido} muestra que con $\tau=10^{-4}$ el PSNR medio cae a 16.93~dB. La razón es que los espectros no son planos: el \FracAltaError{} de la energía del error de demosaicking está en frecuencias radiales mayores que 0.25~ciclos/píxel, mientras que en esas frecuencias se encuentra solo el \FracAltaSenal{} de la energía de la señal. Así, el cociente $S_\omega/S_f$ por frecuencia es varios órdenes de magnitud mayor que el escalar global justamente donde $|H_c|$ es pequeño. Por eso se elige $\tau$ empíricamente: $\tau=0.01$ maximiza el SSIM medio del barrido (0.6259) y queda a 0.21~dB del mejor PSNR medio ($\tau=0.03$, 19.66~dB).
+
+\subsection{Richardson--Lucy}
+
+Se implementa la ecuación~(6) de la guía~\cite{richardson} con la notación de este informe:
+\begin{equation}
+ \widehat I_c^{(k+1)}=\widehat I_c^{(k)}\odot
+ \left[h_c^\dagger*\frac{\widetilde I_c}{h_c*\widehat I_c^{(k)}+\epsilon}\right],
+ \qquad k=0,\dots,K-1,
+ \label{eq:rl}
+\end{equation}
+donde $h_c^\dagger(i,j)=h_c(-i,-j)$ es la PSF invertida espacialmente, la división es elemento a elemento y $\epsilon=10^{-12}$ evita divisiones por cero. Las convoluciones son lineales, del mismo tamaño que la imagen. La \textbf{inicialización} es la imagen constante $\widehat I_c^{(0)}=0.5$; como la actualización es multiplicativa y $\sum h_c=1$, cualquier constante positiva produce la misma secuencia de iteraciones. El \textbf{criterio de parada} es un número fijo de iteraciones, $K=25$, igual para todos los canales, como indica la guía. Las iteraciones no recortan la estimación; el resultado se recorta a $[0,1]$ solo al final, igual que en los demás métodos.
+
+\subsection{Comparación con \texttt{skimage.restoration}}
+
+Las versiones de referencia usan \texttt{restoration.wiener} y \texttt{restoration.richardson\_lucy} de \texttt{scikit-image}~\cite{skimage} (versión 0.26) con la misma imagen $\widetilde I_c$, la misma PSF $h_c$, el mismo $\tau$ y el mismo $K$. Por defecto, \texttt{restoration.wiener} no usa un $\tau$ constante, sino $\tau\,|L|^2$, con $L$ la transformada de un Laplaciano discreto~\cite{orieux}. Para que resuelva la ecuación~\eqref{eq:wiener}, se le entrega como regularizador un impulso unitario (\texttt{reg=np.ones((1,1))}), cuyo espectro es $|L|^2=1$. Como información adicional, se reporta también la versión por defecto (``Wiener \texttt{skimage}, Laplaciano''), que \emph{no} corresponde a la ecuación de la guía.
+
+\subsection{Métricas}
+
+Las imágenes están en $[0,1]$, por lo que $\mathrm{MAX}_I=1$ y el rango dinámico de SSIM es $L=1$.
+\begin{equation}
+ \mathrm{PSNR}=10\log_{10}\left(\frac{\mathrm{MAX}_I^2}{\mathrm{MSE}}\right),
+ \qquad
+ \mathrm{MSE}=\frac{1}{3HW}\sum_{i,j,c}\left(I_c(i,j)-\widehat I_c(i,j)\right)^2,
+\end{equation}
+es decir, el MSE se promedia conjuntamente sobre los tres canales. SSIM~\cite{ssim} se calcula con \texttt{skimage.metrics.structural\_similarity} por canal y luego se promedia; usa una ventana uniforme (no gaussiana) de $7\times7$ píxeles, covarianza muestral, $K_1=0.01$ y $K_2=0.03$, es decir, $C_1=(0.01)^2$ y $C_2=(0.03)^2$. Para SAM~\cite{sam}, si $t_{ij}$ y $r_{ij}$ son los vectores RGB de referencia y de reconstrucción en el píxel $(i,j)$,
+\begin{equation}
+ \mathrm{SAM}=\frac{1}{HW}\sum_{i,j}\frac{180}{\pi}\arccos\left(\frac{t_{ij}^{\mathsf T}r_{ij}}
+ {\|t_{ij}\|_2\|r_{ij}\|_2}\right).
+\end{equation}
+La guía define el ángulo en radianes; aquí se reporta en \textbf{grados} (factor $180/\pi$) para facilitar la lectura. Si ambos vectores son nulos, el ángulo se define como cero. PSNR y SSIM altos y SAM bajo indican mejor reconstrucción.
+
+\section{Resultados}
+
+\subsection{Promedios sobre el dataset}
+
+La Tabla~\ref{tab:promedios} y la Figura~\ref{fig:metricas} resumen la media y la desviación estándar (poblacional) de cada métrica sobre las 18 imágenes. Los valores por imagen están en \texttt{resultados/metricas\_mcmaster.csv}.
+
+\begin{table}[H]
+\centering
+\caption{Media $\pm$ desviación estándar sobre las 18 imágenes McMaster ($256\times256$, $\tau=0.01$, $K=25$).}
+\small
+\input{resultados/promedios.tex}
+\label{tab:promedios}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{metricas_dataset.png}
+\caption{Media y desviación estándar de PSNR, SSIM y SAM para los seis métodos. Las barras claras corresponden a \texttt{skimage} con la misma formulación que la implementación propia.}
+\label{fig:metricas}
+\end{figure}
+
+Respecto del demosaicking sin deconvolución (16.68~dB, SSIM 0.3965), el filtro de Wiener sube el PSNR medio a 19.45~dB (+2.77~dB) y el SSIM a 0.6259; RL lo sube a 18.38~dB (+1.71~dB) y el SSIM a 0.6440. En calidad espectral el resultado es distinto: el SAM medio del demosaicking (7.97$^\circ$) es menor que el de Wiener (8.43$^\circ$) y el de RL (8.17$^\circ$). Por lo tanto, la deconvolución recupera nitidez y estructura, pero en promedio no mejora la fidelidad cromática. RL presenta la menor dispersión de SAM entre imágenes (desviación de 1.57$^\circ$, frente a 2.33$^\circ$ de Wiener y 2.89$^\circ$ del demosaicking).
+
+\subsection{Comparación entre Wiener y Richardson--Lucy}
+
+Wiener supera a RL en PSNR en 17 de las 18 imágenes (la excepción es la imagen 18: 17.55~dB frente a 17.77~dB), con una ventaja media de 1.06~dB. En cambio, RL obtiene mayor SSIM en 14 de 18 imágenes y menor SAM en 11 de 18. Esta diferencia se explica porque RL, con $K=25$, conserva mejor la estructura local (SSIM) y produce una estimación no negativa, pero amplifica el error de demosaicking en forma de un patrón de retícula visible en la Figura~\ref{fig:reconstruccion}, que penaliza el error cuadrático (PSNR). El barrido de la Tabla~\ref{tab:barrido} confirma que $K$ actúa como regularizador: el PSNR medio es máximo con $K=5$ (19.21~dB) y cae a 18.38~dB con $K=25$, 16.56~dB con $K=50$ y 12.30~dB con $K=100$; el SSIM medio, en cambio, es máximo en $K=25$ (0.6440), y el SAM medio crece monótonamente con $K$ (de 5.69$^\circ$ a 23.81$^\circ$). Así, $K=25$ favorece la estructura a costa del error cuadrático y del color.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{reconstruccion_ejemplo.png}
+\caption{Cadena completa para la imagen McMaster 1. Se observan los artefactos de borde de Wiener (convolución circular) y la retícula de alta frecuencia de RL.}
+\label{fig:reconstruccion}
+\end{figure}
+
+\subsection{Implementación propia frente a \texttt{skimage}}
+
+La Tabla~\ref{tab:comparacion} reporta, sobre las 18 imágenes, la máxima diferencia absoluta por píxel entre reconstrucciones y la máxima diferencia en cada métrica.
+
+\begin{table}[H]
+\centering
+\caption{Máximas diferencias entre la implementación propia y \texttt{skimage.restoration} sobre las 18 imágenes.}
+\small
+\input{resultados/comparacion_implementaciones.tex}
+\label{tab:comparacion}
+\end{table}
+
+Con la misma formulación, el Wiener propio y el de \texttt{skimage} difieren a lo más en $1.8\times10^{-15}$ por píxel, es decir, error de redondeo de punto flotante: ambos calculan la misma expresión en Fourier, con FFT completa y con FFT real unitaria, respectivamente. Los RL son idénticos bit a bit, porque ambos aplican la misma recursión con las mismas convoluciones de \texttt{scipy} y el mismo $\epsilon$. En cambio, el Wiener por defecto de \texttt{skimage} (regularizador Laplaciano) difiere hasta en 0.77 por píxel y hasta en 1.01~dB de PSNR por imagen. En promedio mejora las tres métricas respecto del $\tau$ constante (20.08~dB, 0.6626 y 7.57$^\circ$). Es el único método que reduce el SAM medio por debajo del demosaicking. Este resultado es coherente con el análisis espectral del error: $\tau|L|^2$ crece con la frecuencia, por lo que regulariza poco donde está la señal y mucho donde se concentra el error del demosaicking.
+
+\subsection{Variación por imagen}
+
+La Figura~\ref{fig:por_imagen} muestra las tres métricas para cada una de las 18 imágenes. Las versiones \texttt{skimage} con $\tau$ constante no se grafican porque coinciden con las propias.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{metricas_por_imagen.png}
+\caption{PSNR, SSIM y SAM por imagen McMaster para el demosaicking, Wiener propio, RL propio y Wiener de \texttt{skimage} con regularizador Laplaciano.}
+\label{fig:por_imagen}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Mejor y peor imagen por método y métrica (número de imagen McMaster y valor).}
+\label{tab:extremos}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{2}{c}{PSNR [dB]} & \multicolumn{2}{c}{SSIM} & \multicolumn{2}{c}{SAM [$^\circ$]} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Método & Mejor & Peor & Mejor & Peor & Mejor & Peor \\
+\midrule
+Demosaicking & 13 (19.67) & 4 (13.10) & 13 (0.664) & 17 (0.234) & 13 (2.90) & 17 (15.90) \\
+Wiener propio & 11 (22.98) & 4 (13.88) & 14 (0.755) & 3 (0.473) & 13 (4.94) & 8 (15.84) \\
+RL propio & 11 (22.37) & 4 (12.60) & 8 (0.770) & 3 (0.477) & 13 (5.86) & 8 (11.74) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La variación entre imágenes (Tabla~\ref{tab:extremos}) es mayor que la diferencia entre métodos: el PSNR de Wiener va de 13.88 a 22.98~dB. Se observan los siguientes patrones:
+\begin{itemize}
+\item \textbf{Bordes finos y alto contraste.} La imagen 4 (hojas delgadas de palmera sobre fondo blanco y una lámpara de cristal) es la peor en PSNR para los tres métodos, y la imagen 3 (ramo con tallos y flores pequeñas) es la peor en SSIM para Wiener y RL. El DOE atenúa justamente las frecuencias altas, y en estas imágenes la deconvolución no alcanza a recuperarlas; en la imagen 4, RL queda incluso bajo el demosaicking (12.60 frente a 13.10~dB).
+\item \textbf{Regiones extensas y suaves.} Las imágenes 10, 11, 14 y 15 (pimientos, verduras y frutas de superficies amplias) concentran los mejores PSNR y SSIM; la imagen 11 es la mejor en PSNR tanto para Wiener como para RL.
+\item \textbf{Contenido poco saturado.} La imagen 13 (dibujo infantil sobre un refrigerador, con grandes áreas beige) es la mejor en SAM para todos los métodos y la única en que Wiener empeora el PSNR del demosaicking (19.35 frente a 19.67~dB): hay poco detalle que recuperar y la deconvolución solo agrega artefactos. En las imágenes casi acromáticas 4 y 7, la deconvolución aumenta notoriamente el SAM (en la 7, de 4.62$^\circ$ a 9.04$^\circ$ con Wiener), porque cada canal se deconvoluciona con una PSF distinta y los errores de cada canal generan franjas de color en los bordes.
+\item \textbf{Contenido cromático intenso.} La imagen 17 (flores rojas y moradas saturadas) tiene el peor SAM y el peor SSIM del demosaicking; ahí la deconvolución reduce el SAM de 15.90$^\circ$ a 11.03$^\circ$ (Wiener) y 10.70$^\circ$ (RL).
+\item \textbf{Zonas oscuras.} La imagen 8 (máquina de coser negra) es la peor en SAM tras la deconvolución (15.84$^\circ$ con Wiener). Esto es coherente con la definición de SAM: en píxeles de norma pequeña, errores absolutos pequeños cambian mucho la dirección del vector RGB.
+\end{itemize}
+
+\section{Conclusiones}
+
+\begin{enumerate}[label=\arabic*.]
+\item El sistema simulado (DOE con fase cúbica y modos de Zernike, PSF dependiente de la longitud de onda, sensor Bayer RGGB y demosaicking bilineal) produce una degradación que la deconvolución corrige en gran parte en términos espaciales: Wiener eleva el PSNR medio en 2.77~dB y RL en 1.71~dB, y ambos aumentan el SSIM medio en más de un 50~\% respecto del demosaicking (de 0.3965 a 0.6259 y 0.6440).
+\item Wiener con $\tau=0.01$ es el mejor método propio en PSNR (17 de 18 imágenes), mientras que RL con $K=25$ es mejor en SSIM (14 de 18). La elección entre ambos depende de la métrica que se priorice.
+\item La fidelidad espectral no mejora en promedio con la deconvolución independiente por canal: el SAM medio sube de 7.97$^\circ$ a 8.43$^\circ$ (Wiener) y 8.17$^\circ$ (RL). El deterioro se concentra en imágenes casi acromáticas y en zonas oscuras; en imágenes muy saturadas, como la 17, el SAM sí disminuye.
+\item Las implementaciones desde cero son correctas: con la misma imagen, PSF, $\tau$ y $K$ coinciden con \texttt{skimage.restoration} hasta $1.8\times10^{-15}$ (Wiener) y de forma exacta (RL). La única diferencia relevante proviene de que \texttt{restoration.wiener} usa por defecto un regularizador Laplaciano, que mejora en promedio 0.63~dB de PSNR y 0.86$^\circ$ de SAM respecto del $\tau$ constante.
+\item El $\tau$ de la ecuación~(5) estimado como cociente escalar de potencias (del orden de $2\times10^{-4}$) subestima la regularización necesaria, porque el error del demosaicking se concentra en altas frecuencias; el valor útil se encontró por barrido.
+\end{enumerate}
+
+\paragraph{Limitaciones.}
+\begin{itemize}[nosep]
+\item Las imágenes se redimensionan de $500\times500$ a $256\times256$ con Lanczos; el resultado a resolución completa puede diferir.
+\item El demosaicking bilineal genera un error de alta frecuencia que domina la deconvolución; un demosaicking de mayor calidad cambiaría el punto de operación de $\tau$ y $K$.
+\item $K=25$ no es óptimo en PSNR ni en SAM (el barrido indica $K=5$ para ambos) y RL no usa un criterio de parada adaptativo.
+\item $\tau=0.01$ es fijo para las 18 imágenes y para los tres canales; el óptimo de PSNR del barrido es $\tau=0.03$.
+\item El modelo óptico es simplificado: tres longitudes de onda, sin dispersión del material, sin cuantización del DOE, un solo plano de profundidad, sin ruido de sensor y PSF calculada sin relleno de ceros.
+\item El modelo directo usa convolución lineal y Wiener asume convolución circular, lo que genera artefactos de borde que afectan las métricas, ya que no se recortan los bordes.
+\end{itemize}
+
+\paragraph{Trabajo futuro.}
+\begin{itemize}[nosep]
+\item Seleccionar $\tau$ por imagen y por canal, o usar un $\tau(\nu)$ dependiente de la frecuencia estimado a partir del espectro del error de demosaicking, de acuerdo con la ecuación~(5).
+\item Usar un criterio de parada para RL basado en el cambio relativo entre iteraciones o en la discrepancia con la medición, y evaluar RL con regularización por variación total.
+\item Resolver directamente el problema~(2) de la guía sobre la medición Bayer $y$, sin el demosaicking previo, para evitar que el error de interpolación se amplifique.
+\item Deconvolucionar en conjunto los tres canales, con un término que acople la información cromática, para reducir el SAM.
+\item Repetir el experimento a $500\times500$, con ruido de sensor, varias profundidades y el modelo físico de alturas de MSFA-DOE.
+\end{itemize}
+
+\section{Archivos entregados}
+
+El código principal está en \texttt{homework4.py}; el notebook ejecutable es \texttt{homework4.ipynb}. Las figuras están en \texttt{Fig/}, y los resultados tabulares en \texttt{resultados/}: \texttt{metricas\_mcmaster.csv} (métricas por imagen y método), \texttt{diagnosticos\_por\_imagen.csv} (diferencias entre implementaciones y estimación de $\tau$) y \texttt{barrido\_parametros.csv}. Las tablas \texttt{.tex} que inserta este informe se generan con \texttt{python3 homework4.py}, o, sin repetir la simulación, a partir de los CSV con \texttt{python3 homework4.py --solo-tablas}.
+
+\begin{thebibliography}{99}
+\bibitem{msfadoe} N. Díaz, MSFA-DOE: simulador de elementos ópticos difractivos para imágenes multiespectrales (código MATLAB). \url{https://github.com/nelson10/MSFA-DOE}.
+\bibitem{mcmaster} L. Zhang, X. Wu, A. Buades y X. Li, ``Color demosaicking by local directional interpolation and nonlocal adaptive thresholding'', \emph{Journal of Electronic Imaging}, vol.~20, no.~2, 023016, 2011. Fuente del dataset McMaster: \url{https://www4.comp.polyu.edu.hk/~cslzhang/CDM_Dataset.htm}; espejo usado para la descarga automática: \url{https://www.kaggle.com/datasets/liikke/mcmaster}.
+\bibitem{malvar} H. S. Malvar, L.-W. He y R. Cutler, ``High-quality linear interpolation for demosaicing of Bayer-patterned color images'', en \emph{Proc. IEEE ICASSP}, vol.~3, pp.~485--488, 2004.
+\bibitem{dowski} E. R. Dowski y W. T. Cathey, ``Extended depth of field through wave-front coding'', \emph{Applied Optics}, vol.~34, no.~11, pp.~1859--1866, 1995.
+\bibitem{noll} R. J. Noll, ``Zernike polynomials and atmospheric turbulence'', \emph{Journal of the Optical Society of America}, vol.~66, no.~3, pp.~207--211, 1976.
+\bibitem{richardson} W. H. Richardson, ``Bayesian-based iterative method of image restoration'', \emph{Journal of the Optical Society of America}, vol.~62, no.~1, pp.~55--59, 1972; L. B. Lucy, ``An iterative technique for the rectification of observed distributions'', \emph{The Astronomical Journal}, vol.~79, pp.~745--754, 1974.
+\bibitem{orieux} F. Orieux, J.-F. Giovannelli y T. Rodet, ``Bayesian estimation of regularization and point spread function parameters for Wiener--Hunt deconvolution'', \emph{Journal of the Optical Society of America A}, vol.~27, no.~7, pp.~1593--1607, 2010.
+\bibitem{ssim} Z. Wang, A. C. Bovik, H. R. Sheikh y E. P. Simoncelli, ``Image quality assessment: from error visibility to structural similarity'', \emph{IEEE Transactions on Image Processing}, vol.~13, no.~4, pp.~600--612, 2004.
+\bibitem{sam} F. A. Kruse et al., ``The spectral image processing system (SIPS): interactive visualization and analysis of imaging spectrometer data'', \emph{Remote Sensing of Environment}, vol.~44, pp.~145--163, 1993.
+\bibitem{skimage} S. van der Walt et al., ``scikit-image: image processing in Python'', \emph{PeerJ}, vol.~2, e453, 2014.
+\end{thebibliography}
+
+\end{document}
