@@ -236,3 +236,21 @@ __marimo__/
 
 tareas/tarea-01/old/
 tareas/tarea-01/Kodak-Lossless-True-Color-Image-Suite/
+
+.venv-tarea02/
+
+# Archivos pesados (no versionar)
+*.zip
+*.7z
+*.rar
+*.mat
+*.dng
+*.eps
+*.pth
+*.pt
+*.ckpt
+*.npy
+*.npz
+files/computationalImaging.pdf
+tareas/tarea-02/resultados/dng_*.png
+tareas/tarea-06.zip

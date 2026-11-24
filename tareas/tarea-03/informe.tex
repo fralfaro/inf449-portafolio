@@ -94,7 +94,7 @@ donde $\theta$ contiene los coeficientes de representación. Al combinar las ecu
 
 La meta de muestreo comprimido es recuperar $\theta$ aprovechando que es escaso, es decir, que posee pocos elementos distintos de cero o pocos elementos dominantes. La Tarea 3 no implementa todavía una matriz de medición $A$ ni un algoritmo de recuperación; estudia la condición previa: encontrar una base en la que las imágenes tengan una representación suficientemente concentrada.
 
-La guía propone analizar imágenes en las bases Wavelet-2D y DCT-2D. El notebook utilizado en este informe conserva el procedimiento solicitado y lo extiende para aplicar también la etapa de eliminación y reconstrucción a las tres imágenes, en lugar de seleccionar solo una de ellas.
+La guía propone analizar imágenes en las bases Wavelet-2D y DCT-2D. Aunque el objetivo general también menciona Fourier, los incisos operativos especifican Wavelet-2D y DCT-2D; por ello, este trabajo sigue esos incisos y no presenta una comparación con Fourier~\cite{assignment}. El notebook conserva el procedimiento solicitado y amplía la eliminación y reconstrucción a las tres imágenes.
 
 \section{Objetivos y alcance}
 
@@ -115,7 +115,7 @@ El análisis se realiza sobre imágenes 2-D. Por ello, \texttt{astronaut}, que o
 
 \subsection{Escasez y norma \texorpdfstring{$\ell_0$}{l0}}
 
-En la notación de la clase, una señal $\theta$ es $S$-dispersa si pertenece al conjunto $\Sigma_S$, es decir, si tiene a lo más $S$ elementos no nulos. La cantidad de elementos no nulos se denota por
+En la notación de la clase, una señal $\theta$ es $S$-dispersa si pertenece al conjunto $\Sigma_S$, es decir, si tiene a lo más $S$ elementos no nulos. La cantidad de elementos no nulos se denota por~\cite{lecture}
 \begin{equation}
     \lVert\theta\rVert_0=\#\{i:\theta_i\neq0\}.
     \label{eq:l0}
@@ -126,7 +126,7 @@ La existencia de una representación dispersa no basta por sí sola para garanti
 
 \subsection{Transformada Wavelet-2D de Haar}
 
-La transformada de Haar separa cada par de muestras $a$ y $b$ en una componente de baja frecuencia y una componente de detalle:
+La transformada de Haar separa cada par de muestras $a$ y $b$ en una componente de baja frecuencia y una componente de detalle. La construcción multirresolución se presenta en la sección 2.5 del libro; el notebook oficial \texttt{basesAndWavelets.ipynb} ilustra Haar 2-D~\cite{book,waveletNotebook,wavelet}:
 \begin{equation}
     l=\frac{a+b}{\sqrt{2}},
     \qquad
@@ -162,6 +162,7 @@ La DCT representa una imagen como una combinación de cosenos de diferentes frec
     \cos\left(\frac{\pi(2j+1)v}{2W}\right).
     \label{eq:dct}
 \end{equation}
+La DCT se trata en el contexto de compresión de imágenes en la sección 7.4 del libro~\cite{book,dct}.
 Con normalización ortonormal,
 \begin{equation}
     \alpha_0=\frac{1}{\sqrt{H}},
@@ -210,7 +211,7 @@ La imagen \texttt{camera} se etiqueta como \textit{cameraman}. Las imágenes se 
     Y=0.2126R+0.7152G+0.0722B.
     \label{eq:luminancia}
 \end{equation}
-Luego, las tres imágenes se redimensionan a $256\times256$ mediante interpolación Lanczos. Esta resolución permite aplicar cuatro niveles de Haar completos y hace comparable el número de coeficientes:
+Luego, las tres imágenes se redimensionan a $256\times256$ mediante interpolación Lanczos. Esta resolución permite aplicar cuatro niveles de Haar completos y hace comparable el número de coeficientes. El ajuste fuerza una forma cuadrada y deforma la relación de aspecto de \texttt{coins}; por ello, los resultados describen las versiones preprocesadas y no las imágenes originales sin modificar:
 \begin{equation}
     n=256\cdot256=65\,536.
     \label{eq:ncoef}
@@ -512,7 +513,7 @@ El redimensionamiento a $256\times256$ facilita la comparación y la descomposic
 
 \section{Reproducibilidad y archivos generados}
 
-El código se encuentra en \texttt{tareas/tarea-03/homework3.ipynb}. Al ejecutarlo desde la raíz del repositorio o desde la carpeta de la tarea se generan las figuras y tablas utilizadas en este documento:
+El c\'odigo se encuentra en \texttt{tareas/tarea-03/homework3.ipynb}. Requiere Python y las bibliotecas NumPy, SciPy, pandas, Matplotlib, Pillow y scikit-image. Si scikit-image no est\'a disponible, el notebook intenta utilizar las im\'agenes de respaldo en \texttt{tareas/dataset/}. Al ejecutar el notebook desde la raiz del repositorio o desde la carpeta de la tarea se generan las figuras y tablas utilizadas en este documento:
 \begin{itemize}
     \item \texttt{Fig/imagenes\_entrada.png};
     \item \texttt{Fig/coeficientes\_ordenados.png};
@@ -529,6 +530,12 @@ La tabla principal de reconstrucciones contiene 24 filas: tres imágenes, dos ba
 
 \bibitem{lecture}
 Nelson Díaz. \textit{Compressive Sensing and Applications, Lecture 3}. Universidad Técnica Federico Santa María, 2026.
+
+\bibitem{book}
+David Brady. \textit{Computational Optical Imaging}. SPIE Press, 2025. Seccion 2.5, ``Wavelets'', pp. 41--51; seccion 7.4, ``Compression'', especialmente la discusion de DCT en pp. 424--425.
+
+\bibitem{waveletNotebook}
+Arizona Camera Lab. \textit{basesAndWavelets.ipynb}, materiales oficiales del cap\'itulo 2, \texttt{Chapter2ForwardModels}. Repositorio de materiales de \textit{Computational Optical Imaging}.
 
 \bibitem{assignment}
 Nelson Díaz. \textit{Muestreo comprimido: Tarea 3, Análisis de Escasez}. Universidad Técnica Federico Santa María, 2 de septiembre de 2026.

@@ -1,0 +1,2 @@
+# Reuse the single root environment for all portfolio tasks.
+-r ../../requirements.txt

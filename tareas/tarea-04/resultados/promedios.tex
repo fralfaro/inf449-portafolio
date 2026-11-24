@@ -2,11 +2,15 @@
 \toprule
 Método & PSNR [dB] & SSIM & SAM [$^\circ$] \\
 \midrule
-Demosaicking (sin deconvolución) & $16.68 \pm 1.88$ & $0.3965 \pm 0.1251$ & $7.97 \pm 2.89$ \\
-Wiener propio & $19.45 \pm 2.10$ & $0.6259 \pm 0.0806$ & $8.43 \pm 2.33$ \\
-Wiener skimage ($\tau$ constante) & $19.45 \pm 2.10$ & $0.6259 \pm 0.0806$ & $8.43 \pm 2.33$ \\
-Wiener skimage (Laplaciano, por defecto) & $20.08 \pm 2.14$ & $0.6626 \pm 0.0740$ & $7.57 \pm 2.18$ \\
-Richardson--Lucy propio & $18.38 \pm 2.15$ & $0.6440 \pm 0.0834$ & $8.17 \pm 1.57$ \\
-Richardson--Lucy skimage & $18.38 \pm 2.15$ & $0.6440 \pm 0.0834$ & $8.17 \pm 1.57$ \\
+Demosaicking bilineal (sin deconvolución) & $16.48 \pm 2.12$ & $0.3778 \pm 0.1288$ & $9.41 \pm 3.69$ \\
+Wiener propio & $22.72 \pm 2.68$ & $0.6724 \pm 0.0909$ & $5.36 \pm 2.33$ \\
+Wiener skimage ($\tau$ constante) & $22.72 \pm 2.68$ & $0.6724 \pm 0.0909$ & $5.36 \pm 2.33$ \\
+Wiener skimage (Laplaciano, por defecto) & $24.29 \pm 2.78$ & $0.7431 \pm 0.0752$ & $4.83 \pm 2.24$ \\
+Richardson--Lucy propio & $21.27 \pm 2.62$ & $0.5798 \pm 0.1141$ & $5.97 \pm 2.43$ \\
+Richardson--Lucy skimage & $21.27 \pm 2.62$ & $0.5798 \pm 0.1141$ & $5.97 \pm 2.43$ \\
+Ec.~(2) sobre Bayer (Tikhonov, GC) & $22.66 \pm 1.97$ & $0.7290 \pm 0.0580$ & $5.98 \pm 2.53$ \\
+\midrule
+Demosaicking Malvar (sin deconvolución) & $16.49 \pm 2.13$ & $0.3790 \pm 0.1286$ & $9.41 \pm 3.69$ \\
+Malvar + Wiener propio & $22.78 \pm 2.69$ & $0.6734 \pm 0.0910$ & $5.43 \pm 2.39$ \\
 \bottomrule
 \end{tabular}

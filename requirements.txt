@@ -1,12 +1,17 @@
-numpy
-pandas
-matplotlib
-Pillow
-scipy
-opencv-python
-scikit-image
-lpips
-tqdm
-jupyter
-notebook
-certifi
+# PyTorch 2.11 CUDA 12.8 wheel for Windows x64 and Python 3.11.
+torch @ https://download-r2.pytorch.org/whl/cu128/torch-2.11.0%2Bcu128-cp311-cp311-win_amd64.whl#sha256=90ef0c2454e5296a9fb021ddd42252e4ce1abe2c0a4988a173ef90a6cded0bf5
+ipykernel>=6.25,<8
+jupyter>=1.0,<2
+notebook>=7,<8
+matplotlib>=3.7,<4
+numpy>=1.24,<3
+opencv-python-headless>=4.8,<5
+pandas>=1.5,<4
+Pillow>=9,<14
+rawpy>=0.19,<1
+scikit-image>=0.21,<1
+scipy>=1.10,<2
+imageio>=2.31,<3
+tqdm>=4.65,<5
+lpips>=0.1.4,<0.2
+
